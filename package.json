@@ -1,0 +1,20 @@
+{
+  "name": "@flickertalk/plugin-board",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "katex": "^0.18.0",
+    "perfect-freehand": "^1.2.2",
+    "yjs": "^13.6.20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "happy-dom": "^20.0.0",
+    "vitest": "^5.0.1"
+  }
+}

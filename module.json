@@ -1,0 +1,19 @@
+{
+  "id": "com.flickertalk.board",
+  "name": "Board",
+  "version": "1.0.0",
+  "minCoreVersion": "1.1.0",
+  "components": [
+    "ft-board"
+  ],
+  "permissions": {
+    "send": "propose",
+    "live": true,
+    "storage": "large"
+  },
+  "opens": [
+    "application/x-ftboard",
+    "image/*"
+  ],
+  "summary": "A whiteboard with ink, text and formulas: draw a class, send it, or give it live."
+}
