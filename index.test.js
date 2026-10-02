@@ -1,6 +1,8 @@
 // The plugin's own tests (Plan §53, plan-board): the board as a document, where things are, the
 // stroke, the live channel between two boards, the formulas, the catalogue, and the view against
 // a fake core.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Board, FILE_FORMAT, FILE_MIME, LOCAL, REMOTE, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./src/model.js";
 import { boundsOfAll, camera, fit, hits, itemAt, pan, toScreen, toWorld, zoomAt } from "./src/geometry.js";
@@ -293,6 +295,30 @@ describe("the catalogue and the styles", () => {
     expect(isBoardFile({ name: "class.ftboard", mime: "application/octet-stream" })).toBe(true);
     expect(isBoardFile({ name: "x.png", mime: FILE_MIME })).toBe(true);
     expect(isBoardFile({ name: "x.png", mime: "image/png" })).toBe(false);
+  });
+});
+
+describe("the manifest", () => {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dirname, "module.json"), "utf8"));
+  // The app's languages besides English (plugin-sdk's module.schema.json, `locales`).
+  const APP_LANGUAGES = ["es", "pt", "fr", "de", "it", "ro", "ru", "uk", "pl", "tr", "ar", "hi", "bn", "id", "vi", "th", "ja", "ko", "zh-CN", "zh-TW"];
+  const length = (text) => [...text].length;
+
+  it("names and sums up the board in each of the app's languages, within the schema's limits", () => {
+    expect(Object.keys(manifest.locales ?? {})).toEqual(APP_LANGUAGES);
+    for (const lang of APP_LANGUAGES) {
+      const { name, summary, ...rest } = manifest.locales[lang];
+      expect(rest, lang).toEqual({});
+      expect(name.trim(), lang).not.toBe("");
+      expect(length(name), lang).toBeLessThanOrEqual(64);
+      expect(summary.trim(), lang).not.toBe("");
+      expect(length(summary), lang).toBeLessThanOrEqual(200);
+    }
+  });
+
+  it("keeps English at the top level", () => {
+    expect(manifest.name).toBe("Board");
+    expect(manifest.summary).toBe("A whiteboard with ink, text and formulas: draw a class, send it, or give it live.");
   });
 });
 
