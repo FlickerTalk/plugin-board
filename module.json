@@ -1,7 +1,7 @@
 {
   "id": "com.flickertalk.board",
   "name": "Board",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minCoreVersion": "1.1.0",
   "components": [
     "ft-board"
@@ -15,5 +15,87 @@
     "application/x-ftboard",
     "image/*"
   ],
-  "summary": "A whiteboard with ink, text and formulas: draw a class, send it, or give it live."
+  "summary": "A whiteboard with ink, text and formulas: draw a class, send it, or give it live.",
+  "locales": {
+    "es": {
+      "name": "Pizarra",
+      "summary": "Una pizarra con tinta, texto y fórmulas: dibuja una clase, envíala o dala en directo."
+    },
+    "pt": {
+      "name": "Quadro",
+      "summary": "Um quadro com tinta, texto e fórmulas: desenhe uma aula, envie-a ou dê-a em direto."
+    },
+    "fr": {
+      "name": "Tableau",
+      "summary": "Un tableau blanc avec encre, texte et formules : dessinez un cours, envoyez-le ou donnez-le en direct."
+    },
+    "de": {
+      "name": "Tafel",
+      "summary": "Eine Tafel mit Tinte, Text und Formeln: Zeichne eine Unterrichtsstunde, schick sie oder halte sie live."
+    },
+    "it": {
+      "name": "Lavagna",
+      "summary": "Una lavagna con inchiostro, testo e formule: disegna una lezione, inviala o tienila in diretta."
+    },
+    "ro": {
+      "name": "Tablă",
+      "summary": "O tablă cu cerneală, text și formule: desenează o lecție, trimite-o sau ține-o în direct."
+    },
+    "ru": {
+      "name": "Доска",
+      "summary": "Доска с пером, текстом и формулами: нарисуйте урок, отправьте его или проведите вживую."
+    },
+    "uk": {
+      "name": "Дошка",
+      "summary": "Дошка з пером, текстом і формулами: намалюйте урок, надішліть його або проведіть наживо."
+    },
+    "pl": {
+      "name": "Tablica",
+      "summary": "Tablica z piórem, tekstem i wzorami: narysuj lekcję, wyślij ją albo poprowadź na żywo."
+    },
+    "tr": {
+      "name": "Tahta",
+      "summary": "Mürekkep, metin ve formüllerle bir tahta: bir ders çiz, gönder ya da canlı anlat."
+    },
+    "ar": {
+      "name": "سبورة",
+      "summary": "سبورة بالحبر والنص والمعادلات: ارسم درسًا، أو أرسله، أو قدّمه مباشرةً."
+    },
+    "hi": {
+      "name": "बोर्ड",
+      "summary": "स्याही, टेक्स्ट और सूत्रों वाला व्हाइटबोर्ड: एक कक्षा बनाएँ, उसे भेजें या लाइव पढ़ाएँ।"
+    },
+    "bn": {
+      "name": "বোর্ড",
+      "summary": "কালি, লেখা ও সূত্রসহ একটি হোয়াইটবোর্ড: একটি ক্লাস আঁকুন, পাঠান বা লাইভে নিন।"
+    },
+    "id": {
+      "name": "Papan",
+      "summary": "Papan tulis dengan tinta, teks, dan rumus: gambar sebuah pelajaran, kirimkan, atau sampaikan secara langsung."
+    },
+    "vi": {
+      "name": "Bảng",
+      "summary": "Bảng trắng với nét vẽ, chữ và công thức: vẽ một bài giảng, gửi đi hoặc giảng trực tiếp."
+    },
+    "th": {
+      "name": "กระดาน",
+      "summary": "ไวท์บอร์ดที่มีหมึก ข้อความ และสูตร: วาดบทเรียน ส่งไป หรือสอนแบบสด"
+    },
+    "ja": {
+      "name": "ボード",
+      "summary": "手書き、テキスト、数式が使えるホワイトボード。授業を描いて送ったり、ライブで行ったりできます。"
+    },
+    "ko": {
+      "name": "보드",
+      "summary": "잉크, 텍스트, 수식을 쓰는 화이트보드: 수업을 그려서 보내거나 실시간으로 진행하세요."
+    },
+    "zh-CN": {
+      "name": "白板",
+      "summary": "支持手写、文字和公式的白板：画一堂课，发送出去，或者实时讲授。"
+    },
+    "zh-TW": {
+      "name": "白板",
+      "summary": "支援手寫、文字和公式的白板：畫一堂課，傳送出去，或即時講授。"
+    }
+  }
 }
