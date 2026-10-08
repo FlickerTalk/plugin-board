@@ -2,6 +2,7 @@
   "id": "com.flickertalk.board",
   "name": "Board",
   "version": "1.0.1",
+  "icon": "easel-outline",
   "minCoreVersion": "1.1.0",
   "components": [
     "ft-board"
