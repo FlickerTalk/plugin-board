@@ -1,7 +1,7 @@
 // The plugin's own tests (Plan §53, plan-board): the board as a document, where things are, the
 // stroke, the live channel between two boards, the formulas, the catalogue, and the view against
 // a fake core.
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Board, FILE_FORMAT, FILE_MIME, LOCAL, REMOTE, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./src/model.js";
@@ -559,5 +559,20 @@ describe("the view", () => {
     await press("live");
     expect(element.live).toBeNull();
     expect(inside().textContent).toContain("not reachable");
+  });
+});
+
+describe("the image of the Apps grid", () => {
+  // icon.svg beside module.json and dist/, signed with the rest: the app draws it on the tile; the
+  // Ionicon in module.json stays as the fallback (2026-10-08).
+  const image = join(import.meta.dirname, "icon.svg");
+
+  it("is a square 64 × 64 SVG of at most 4 KB at the root of the package, and not inside dist/", () => {
+    expect(existsSync(image), "icon.svg").toBe(true);
+    expect(statSync(image).size).toBeLessThanOrEqual(4096);
+    const svg = readFileSync(image, "utf8");
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain('viewBox="0 0 64 64"');
+    expect(existsSync(join(import.meta.dirname, "dist", "icon.svg"))).toBe(false);
   });
 });
