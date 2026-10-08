@@ -181,13 +181,14 @@ class BoardElement extends HTMLElement {
     // Opened by the app in a call (1.6.0): lead (live on its own) or follow (read-only).
     const role = opening.presenting;
     this.presenting = this.mayLive && (role === "lead" || role === "follow") ? role : null;
-    await this.loadList();
     if (this.presenting === "follow") {
-      // An empty board until the presenter's hello names the real one; ask for it now.
+      // An empty board until the presenter's hello names the real one; ask for it now. Before any
+      // await, so a hello that comes meanwhile is never replaced (and said bye to) by this one.
       this.show(new Board({ name: "" }), { readOnly: true });
       void globalThis.ft.live.send(encode({ k: ASK, board: "" }));
       return;
     }
+    await this.loadList();
     if (opening.file) {
       if (isBoardFile(opening.file)) {
         const board = Board.parse(new TextDecoder().decode(fromBase64(opening.file.data)));
@@ -315,7 +316,10 @@ class BoardElement extends HTMLElement {
   async onLiveMessage(data) {
     const message = decode(data);
     if (message?.k === ASK) {
-      if (this.presenting === "lead" && this.live) await this.live.restart();
+      if (this.presenting !== "lead") return;
+      // A follower that just opened: a whole hello, or going live again after its bye.
+      if (this.live) await this.live.restart();
+      else if (this.board && !this.readOnly && !this.replay) await this.startLive();
       return;
     }
     if (this.live) {
@@ -336,7 +340,8 @@ class BoardElement extends HTMLElement {
       this.show(board, { readOnly: following });
     }
     this.readOnly = following;
-    this.live = new Live(board, (data) => globalThis.ft.live.send(data));
+    // A presenter went live already when the board was shown: answer through that session.
+    if (!this.live) this.live = new Live(board, (data) => globalThis.ft.live.send(data));
     await this.live.hear(data);
     this.paintBar();
   }

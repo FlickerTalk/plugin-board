@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Board, FILE_FORMAT, FILE_MIME, LOCAL, REMOTE, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./src/model.js";
 import { boundsOfAll, camera, fit, hits, itemAt, pan, toScreen, toWorld, zoomAt } from "./src/geometry.js";
 import { NIBS, outlineOf, pathOf, pathOfItem, strokeItem } from "./src/ink.js";
-import { ASK, HELLO, Live, PART, Reassembler, SYNC, UPDATE, decode, encode, split } from "./src/live.js";
+import { ASK, BYE, HELLO, Live, PART, Reassembler, SYNC, UPDATE, decode, encode, split } from "./src/live.js";
 import { PALETTE, insert, render } from "./src/formula.js";
 import { LANGUAGES, catalogueOf, t } from "./src/i18n.js";
 import { fontFaces, imagePlacement, isBoardFile, measured, pacing, withoutFontFaces } from "./src/index.js";
@@ -587,6 +587,12 @@ describe("the view", () => {
     for (const handler of side.heard) await handler(data);
     await tick();
   };
+  // Sends what a board has queued now, through its own side: left to its 80 ms timer, it would go
+  // out through whichever side the test switched to by then.
+  const sent = async ({ side, board }) => {
+    globalThis.ft = side.ft;
+    await board.live.flush();
+  };
 
   it("as the presenter, goes live by itself on the board it shows, with no switch and no send", async () => {
     ({ side: core, board: element } = await fresh({ presenting: "lead" }));
@@ -612,6 +618,7 @@ describe("the view", () => {
     element = teacher.board;
     await press("new");
     teacher.board.board.add({ kind: "text", x: 0, y: 0, text: "lesson" });
+    await sent(teacher);
     const hello = teacher.side.ft.live.send.mock.calls[0][0];
 
     const student = await fresh({ presenting: "follow" });
@@ -633,6 +640,7 @@ describe("the view", () => {
     element = teacher.board;
     await press("new");
     teacher.board.board.add({ kind: "text", x: 0, y: 0, text: "lesson" });
+    await sent(teacher);
     const first = await fresh({ presenting: "follow" });
     await deliver(first.side, teacher.side.ft.live.send.mock.calls[0][0]);
     await deliver(teacher.side, first.side.ft.live.send.mock.calls.at(-1)[0]);
@@ -646,6 +654,56 @@ describe("the view", () => {
     await deliver(teacher.side, again.side.ft.live.send.mock.calls.at(-1)[0]);
     await deliver(again.side, teacher.side.ft.live.send.mock.calls.at(-1)[0]);
     expect(again.board.board.list().map((one) => one.text)).toEqual(["lesson"]);
+  });
+
+  it("as a follower, takes a hello that comes while it is still opening, and says no bye for it", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    element = teacher.board;
+    await press("new");
+    teacher.board.board.add({ kind: "text", x: 0, y: 0, text: "lesson" });
+    await sent(teacher);
+    const hello = teacher.side.ft.live.send.mock.calls[0][0];
+
+    // The student's records answer slowly; the teacher's hello lands in the meantime.
+    const side = fakeCore();
+    let answer;
+    const keys = side.ft.records.keys;
+    side.ft.records.keys = (prefix) => new Promise((resolve) => (answer = () => resolve(keys(prefix))));
+    globalThis.ft = side.ft;
+    const student = document.createElement("ft-board");
+    document.body.append(student);
+    const opening = side.open({ live: true, presenting: "follow" });
+    await deliver(side, hello);
+    answer?.();
+    await opening;
+    await tick();
+    expect(student.board.id).toBe(teacher.board.board.id);
+    expect(student.live).not.toBeNull();
+    expect(side.ft.live.send.mock.calls.map(([data]) => decode(data).k)).not.toContain(BYE);
+    await deliver(teacher.side, side.ft.live.send.mock.calls.at(-1)[0]);
+    await deliver(side, teacher.side.ft.live.send.mock.calls.at(-1)[0]);
+    expect(student.board.list().map((one) => one.text)).toEqual(["lesson"]);
+  });
+
+  it("as the presenter, goes live again when a follower asks after a bye", async () => {
+    ({ side: core, board: element } = await fresh({ presenting: "lead" }));
+    await press("new");
+    await deliver(core, encode({ k: BYE, board: element.board.id }));
+    expect(element.live).toBeNull();
+    await deliver(core, encode({ k: ASK, board: "" }));
+    expect(element.live).not.toBeNull();
+    expect(decode(core.ft.live.send.mock.calls.at(-1)[0])).toMatchObject({ k: HELLO, board: element.board.id });
+  });
+
+  it("as the presenter, keeps one live session when a hello opens a board it did not have", async () => {
+    ({ side: core, board: element } = await fresh({ presenting: "lead" }));
+    const theirs = new Board({ name: "theirs" });
+    await deliver(core, encode({ k: HELLO, board: theirs.id, sv: toBase64(theirs.stateVector()) }));
+    expect(element.board.id).toBe(theirs.id);
+    element.board.add({ kind: "text", x: 0, y: 0, text: "mine" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const updates = core.ft.live.send.mock.calls.filter(([data]) => decode(data).k === UPDATE);
+    expect(updates).toHaveLength(1);
   });
 });
 
