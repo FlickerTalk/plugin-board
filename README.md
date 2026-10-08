@@ -28,6 +28,11 @@ ni por el servidor.
   el profesor activa «en directo»; al otro lado la pizarra aparece sola, y desde entonces cada
   cambio llega en menos de 100 ms. Quien entra con una copia antigua recibe solo lo que le falta
   (sincronización de Yjs). Los dos pueden dibujar en esta versión (sin roles todavía).
+- **Presentar en una llamada** (desde la 1.1.0): la app abre el plugin con `presenting`. Quien
+  presenta (`lead`) entra en directo él solo con la pizarra que muestra, sin el interruptor de
+  directo ni «enviar», y vuelve a saludar cuando el otro lo pide (`ask`); quien mira (`follow`)
+  ve la pizarra en solo lectura, sin herramientas ni vuelta a la lista, y puede guardar una copia.
+  Sin `presenting` nada cambia.
 - **Abrir con**: `application/x-ftboard` y `image/*` (una imagen abre una pizarra nueva con ella).
 
 ## Qué usa del núcleo
@@ -38,7 +43,7 @@ ni por el servidor.
 | `ft.live`     | el directo 1 a 1, en mensajes de ≤ 48 KiB (los grandes van en partes) |
 | `ft.send` / `ft.save` | el fichero `.ftboard` (`send: propose`: lo envía el usuario)  |
 | `ft.pickFile` | las imágenes                                                          |
-| `onOpen`      | `file` (abrir con), `live` (si el directo es posible), `lang`         |
+| `onOpen`      | `file` (abrir con), `live` (si el directo es posible), `presenting` (`lead`/`follow`, en una llamada), `lang` |
 
 Necesita el núcleo **1.6.0** (`minCoreVersion`). El contrato está en
 [plugin-sdk](https://github.com/FlickerTalk/plugin-sdk).

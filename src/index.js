@@ -7,7 +7,7 @@ import katexCss from "katex/dist/katex.min.css";
 import { Board, FILE_MIME, LOCAL, PREFIX, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./model.js";
 import { MAX_ZOOM, MIN_ZOOM, boundsOf, camera, distance, fit, itemAt, middle, pan, toWorld, zoomAt } from "./geometry.js";
 import { INKS, NIBS, outlineOf, pathOf, pathOfItem, strokeItem } from "./ink.js";
-import { BYE, HELLO, Live, decode } from "./live.js";
+import { ASK, BYE, HELLO, Live, decode, encode } from "./live.js";
 import { PALETTE, insert, render } from "./formula.js";
 import { t } from "./i18n.js";
 
@@ -143,6 +143,7 @@ class BoardElement extends HTMLElement {
     this.board = null;
     this.readOnly = false;
     this.mayLive = false;
+    this.presenting = null;
     this.live = null;
     this.tool = "pen";
     this.ink = 0;
@@ -177,7 +178,16 @@ class BoardElement extends HTMLElement {
   async onOpen(opening) {
     this.lang = opening.lang || "en";
     this.mayLive = Boolean(opening.live);
+    // Opened by the app in a call (1.6.0): lead (live on its own) or follow (read-only).
+    const role = opening.presenting;
+    this.presenting = this.mayLive && (role === "lead" || role === "follow") ? role : null;
     await this.loadList();
+    if (this.presenting === "follow") {
+      // An empty board until the presenter's hello names the real one; ask for it now.
+      this.show(new Board({ name: "" }), { readOnly: true });
+      void globalThis.ft.live.send(encode({ k: ASK, board: "" }));
+      return;
+    }
     if (opening.file) {
       if (isBoardFile(opening.file)) {
         const board = Board.parse(new TextDecoder().decode(fromBase64(opening.file.data)));
@@ -228,6 +238,7 @@ class BoardElement extends HTMLElement {
     if (!readOnly) this.stopBoard.push(board.onUpdate(() => this.keepSoon()));
     this.paint();
     this.fitAll();
+    if (this.presenting === "lead" && !readOnly) void this.startLive();
   }
 
   leaveBoard() {
@@ -282,9 +293,16 @@ class BoardElement extends HTMLElement {
       this.paintBar();
       return;
     }
+    await this.startLive();
+  }
+
+  /** Goes live on the open board. A presenter stays live when nobody answers yet: it says hello
+   *  again when the follower asks. */
+  async startLive() {
+    if (this.live || !this.board) return;
     this.live = new Live(this.board, (data) => globalThis.ft.live.send(data));
     const reached = await this.live.hello();
-    if (!reached) {
+    if (!reached && this.presenting !== "lead") {
       this.live.close();
       this.live = null;
       this.warning = t(this.lang, "liveGone");
@@ -295,6 +313,11 @@ class BoardElement extends HTMLElement {
 
   /** What the twin says: for the open board, or a hello for one this phone does not have yet. */
   async onLiveMessage(data) {
+    const message = decode(data);
+    if (message?.k === ASK) {
+      if (this.presenting === "lead" && this.live) await this.live.restart();
+      return;
+    }
     if (this.live) {
       const kind = await this.live.hear(data);
       if (kind === BYE) {
@@ -304,15 +327,15 @@ class BoardElement extends HTMLElement {
       }
       return;
     }
-    const message = decode(data);
     if (!message || message.k !== HELLO || !this.mayLive) return;
+    const following = this.presenting === "follow";
     let board = this.board && this.board.id === message.board ? this.board : null;
     if (!board) {
       const body = await globalThis.ft.records.get(bodyKey(message.board));
       board = body ? Board.parse(body, { id: message.board }) : new Board({ id: message.board, name: t(this.lang, "received") });
-      this.show(board);
+      this.show(board, { readOnly: following });
     }
-    this.readOnly = false;
+    this.readOnly = following;
     this.live = new Live(board, (data) => globalThis.ft.live.send(data));
     await this.live.hear(data);
     this.paintBar();
@@ -800,6 +823,14 @@ class BoardElement extends HTMLElement {
       return;
     }
     if (this.readOnly) {
+      if (this.presenting === "follow") {
+        // Following a presenter: no way back to the list and nothing to draw with, only a copy.
+        this.setBar(bar, `<ion-toolbar>
+          <ion-buttons slot="end">${button("keep", T("keepCopy"), "save-outline")}</ion-buttons>
+        </ion-toolbar>`);
+        if (badge) (badge.textContent = this.live ? T("live") : T("readOnly")), (badge.hidden = false);
+        return;
+      }
       this.setBar(bar, `<ion-toolbar>
         <ion-buttons slot="start">${button("back", T("back"), "arrow-back-outline")}</ion-buttons>
         <ion-buttons slot="end">
@@ -830,10 +861,10 @@ class BoardElement extends HTMLElement {
       <ion-toolbar>
         <ion-buttons slot="start">${button("back", T("back"), "arrow-back-outline")}</ion-buttons>
         <ion-buttons slot="end">
-          ${this.mayLive ? button("live", this.live ? T("liveOn") : T("liveOff"), "play-outline", { on: Boolean(this.live) }) : ""}
+          ${this.mayLive && !this.presenting ? button("live", this.live ? T("liveOn") : T("liveOff"), "play-outline", { on: Boolean(this.live) }) : ""}
           ${button("replay", T("replay"), "time-outline", { disabled: !this.board.log.length })}
           ${button("save", T("save"), "save-outline")}
-          ${button("send", T("send"), "send-outline")}
+          ${this.presenting ? "" : button("send", T("send"), "send-outline")}
         </ion-buttons>
       </ion-toolbar>
       <ion-toolbar>

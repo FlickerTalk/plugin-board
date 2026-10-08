@@ -14,6 +14,8 @@ export const SYNC = "sync";
 export const UPDATE = "update";
 export const PART = "part";
 export const BYE = "bye";
+/** A follower that just opened asks the presenter to say hello again (Plugin API 1.6.0). */
+export const ASK = "ask";
 
 /** A message as it travels: JSON, then base64, as `ft.live.send` wants it. */
 export function encode(message) {
@@ -88,6 +90,12 @@ export class Live {
   /** Says hello: what this side has, so the other sends only what is missing. */
   async hello() {
     return this.say({ k: HELLO, board: this.board.id, sv: toBase64(this.board.stateVector()) });
+  }
+
+  /** Says hello as if for the first time: a follower that came back has nothing yet. */
+  async restart() {
+    this.synced = false;
+    return this.hello();
   }
 
   async say(message) {
