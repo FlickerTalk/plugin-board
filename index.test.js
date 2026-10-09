@@ -324,12 +324,12 @@ describe("the manifest", () => {
 });
 
 /** A fake core: records and the live channel in memory, as the frame's `ft` would answer. */
-function fakeCore() {
-  const records = new Map();
+function fakeCore({ records = new Map(), memory = new Map() } = {}) {
   const handlers = [];
   const heard = [];
   return {
     records,
+    memory,
     heard,
     open: (opening) => Promise.all(handlers.map((handler) => handler({ text: "", dark: false, lang: "en", file: null, ref: null, reminder: null, live: false, ...opening }))),
     ft: {
@@ -344,6 +344,12 @@ function fakeCore() {
         forget: async (key) => records.delete(key),
         keys: async (prefix) => [...records.keys()].filter((key) => key.startsWith(prefix)).sort(),
         usage: async () => ({ used: 0, quota: 256_000_000 }),
+      },
+      // The plugin's small memory (`ft.store`), apart from its records.
+      store: {
+        get: vi.fn(async (key) => memory.get(key) ?? null),
+        set: vi.fn(async (key, value) => (memory.set(key, value), true)),
+        forget: vi.fn(async (key) => memory.delete(key)),
       },
       live: {
         send: vi.fn(async () => true),
@@ -387,6 +393,12 @@ describe("the view", () => {
     element = document.createElement("ft-board");
     document.body.append(element);
     await core.open({});
+  });
+
+  afterEach(() => {
+    // A save (600 ms) or a live message still waiting would land in a later test's core and add a
+    // board there: every board of this test is left now.
+    for (const board of document.querySelectorAll("ft-board")) board.leaveBoard();
   });
 
   it("starts with no boards, makes one, draws on it and keeps it", async () => {
@@ -573,8 +585,8 @@ describe("the view", () => {
   });
 
   // A presentation in a call (Plugin API 1.6.0): the app opens the board to lead or to follow.
-  const fresh = async (opening, send = vi.fn(async () => true)) => {
-    const side = fakeCore();
+  const fresh = async (opening, send = vi.fn(async () => true), kept = {}) => {
+    const side = fakeCore(kept);
     side.ft.live.send = send;
     globalThis.ft = side.ft;
     const board = document.createElement("ft-board");
@@ -704,6 +716,86 @@ describe("the view", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     const updates = core.ft.live.send.mock.calls.filter(([data]) => decode(data).k === UPDATE);
     expect(updates).toHaveLength(1);
+  });
+});
+
+describe("a presenter that comes back (the call screen left and back)", () => {
+  // The app closes the board when the call screen is left and opens it again on return: a new
+  // element, with the same records and the same memory.
+  let opened = [];
+  const fresh = async (opening, kept = {}) => {
+    const side = fakeCore(kept);
+    globalThis.ft = side.ft;
+    const board = document.createElement("ft-board");
+    document.body.append(board);
+    await side.open({ live: true, ...opening });
+    opened.push({ side, board });
+    return { side, board };
+  };
+  const again = (before, opening = { presenting: "lead" }) => fresh(opening, { records: before.side.records, memory: before.side.memory });
+  const press = async (element, act) => {
+    element.querySelector(`[data-act="${act}"]`).click();
+    for (let wait = 0; wait < 5; wait += 1) await tick();
+  };
+  const said = (side) => side.ft.live.send.mock.calls.map(([data]) => decode(data));
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  afterEach(async () => {
+    // A save or a live message still waiting would land in the next test's core: done now, each
+    // through its own side.
+    for (const { side, board } of opened) {
+      globalThis.ft = side.ft;
+      board.leaveBoard();
+      await tick();
+    }
+    opened = [];
+  });
+
+  it("opens the board it was presenting and goes live on it, not its list of boards", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    await press(teacher.board, "new");
+    const id = teacher.board.board.id;
+
+    const back = await again(teacher);
+    expect(back.board.screen).toBe("board");
+    expect(back.board.board.id).toBe(id);
+    expect(back.board.readOnly).toBe(false);
+    expect(back.board.live).not.toBeNull();
+    expect(said(back.side)[0]).toMatchObject({ k: HELLO, board: id });
+  });
+
+  it("opens its list when the board it was presenting is gone", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    await press(teacher.board, "new");
+    teacher.side.records.clear();
+
+    const back = await again(teacher);
+    expect(back.board.screen).toBe("home");
+    expect(back.board.live).toBeNull();
+    expect(back.side.ft.live.send).not.toHaveBeenCalled();
+  });
+
+  it("opens its list when it had gone back to the list before leaving", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    await press(teacher.board, "new");
+    await press(teacher.board, "back");
+
+    const back = await again(teacher);
+    expect(back.board.screen).toBe("home");
+    expect(back.side.ft.live.send).not.toHaveBeenCalled();
+  });
+
+  it("remembers only what it presents: a board drawn outside a presentation, or followed, is not reopened", async () => {
+    const alone = await fresh({});
+    await press(alone.board, "new");
+    const follower = await again(alone, { presenting: "follow" });
+    expect(follower.side.ft.store.set).not.toHaveBeenCalled();
+
+    const back = await again(alone);
+    expect(back.board.screen).toBe("home");
   });
 });
 

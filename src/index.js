@@ -2,6 +2,8 @@
 // infinite canvas; kept on this phone, saved or sent as a `.ftboard` file, opened read-only on the
 // other side, replayed stroke by stroke, and, from a conversation where both have the plugin,
 // drawn live over the direct connection. Nothing leaves this frame but what the user sends.
+// Presenting in a call, it remembers which board it presents (`ft.store`): the app closes it when
+// the call screen is left, and on return it opens that board again.
 
 import katexCss from "katex/dist/katex.min.css";
 import { Board, FILE_MIME, LOCAL, PREFIX, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./model.js";
@@ -12,6 +14,9 @@ import { PALETTE, insert, render } from "./formula.js";
 import { t } from "./i18n.js";
 
 export { Board, Replay, Live, strokeItem, render, insert, PALETTE };
+
+/** The key of the plugin's memory that holds the board a presenter shows. */
+export const PRESENTED = "present";
 
 /** The `@font-face` rules of a stylesheet, pointed at the fonts the package carries, woff2 only. */
 export function fontFaces(css, base = "./dist/fonts/") {
@@ -189,6 +194,8 @@ class BoardElement extends HTMLElement {
       return;
     }
     await this.loadList();
+    // A presenter that comes back (the call screen left and back): the board it was presenting.
+    if (this.presenting === "lead" && !opening.file && (await this.resume())) return;
     if (opening.file) {
       if (isBoardFile(opening.file)) {
         const board = Board.parse(new TextDecoder().decode(fromBase64(opening.file.data)));
@@ -222,6 +229,25 @@ class BoardElement extends HTMLElement {
     const body = await globalThis.ft.records.get(bodyKey(id));
     const board = body ? Board.parse(body, { id }) : null;
     if (board) this.show(board);
+    return Boolean(board);
+  }
+
+  /** Opens the board this presenter was showing, if it still has it; false leaves the list. */
+  async resume() {
+    try {
+      const id = await globalThis.ft.store?.get(PRESENTED);
+      return Boolean(id) && (await this.open(id));
+    } catch {
+      return false;
+    }
+  }
+
+  /** What a presenter shows, kept so that it opens there again; null when it shows its list. */
+  rememberPresented(id) {
+    const memory = globalThis.ft?.store;
+    if (this.presenting !== "lead" || !memory) return;
+    const done = id ? memory.set(PRESENTED, id) : memory.forget(PRESENTED);
+    done?.catch?.(() => {});
   }
 
   /** Puts a board on screen, editable unless it is someone else's file. */
@@ -239,7 +265,10 @@ class BoardElement extends HTMLElement {
     if (!readOnly) this.stopBoard.push(board.onUpdate(() => this.keepSoon()));
     this.paint();
     this.fitAll();
-    if (this.presenting === "lead" && !readOnly) void this.startLive();
+    if (this.presenting === "lead" && !readOnly) {
+      this.rememberPresented(board.id);
+      void this.startLive();
+    }
   }
 
   leaveBoard() {
@@ -405,6 +434,7 @@ class BoardElement extends HTMLElement {
       case "back":
         this.leaveBoard();
         this.board = null;
+        this.rememberPresented(null);
         this.screen = "home";
         await this.loadList();
         return this.paint();
