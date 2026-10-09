@@ -28,7 +28,7 @@ export function fontFaces(css, base = "./dist/fonts/") {
     .join("\n");
 }
 
-/** The stylesheet without its `@font-face` rules: what goes inside the shadow tree. */
+/** The stylesheet without its `@font-face` rules: what goes in the frame's document. */
 export function withoutFontFaces(css) {
   return css.replace(/@font-face\{[^}]*\}/g, "");
 }
@@ -61,67 +61,75 @@ export function isBoardFile(file) {
 const escape = (text) =>
   String(text).replace(/[&<>"']/g, (one) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[one]);
 
+// Ionic draws the window (the app lends it to the frame, app 1.6.0): its header, toolbars, buttons
+// and content. This is only what is the board's own, with the app's colours through Ionic's
+// variables, in light and dark.
 const STYLE = `
-:host { display: flex; flex-direction: column; font: 14px system-ui, sans-serif; color: #111; --paper: #fff; --line: #d8d8d8; --soft: #666; --accent: #e0562b; }
-@media (prefers-color-scheme: dark) { :host { color: #f4f4f4; --paper: #111; --line: #3a3a3a; --soft: #aaa; } }
-:host-context([data-dark]) { color: #f4f4f4; --paper: #111; --line: #3a3a3a; --soft: #aaa; }
-* { box-sizing: border-box; }
-.view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 4px 0; }
-.grow { flex: 1; }
-button {
+ft-board { display: flex; flex-direction: column; font: 14px system-ui, sans-serif; color: var(--ion-text-color, #111); --paper: var(--ion-background-color, #fff); --line: var(--ion-border-color, #d8d8d8); --soft: var(--ion-color-medium, #666); --accent: var(--ion-color-danger, #e0562b); }
+ft-board * { box-sizing: border-box; }
+ft-board ion-content { flex: 1; }
+ft-board .body { display: flex; flex-direction: column; height: 100%; }
+ft-board ion-buttons { flex-wrap: wrap; }
+ft-board .bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 4px 0; }
+ft-board .grow { flex: 1; }
+ft-board button {
   appearance: none; border: 1px solid currentColor; background: transparent; color: inherit;
   border-radius: 10px; min-width: 40px; height: 38px; font: inherit; padding: 0 8px; cursor: pointer; opacity: .75;
 }
-button.on { opacity: 1; box-shadow: inset 0 0 0 2px currentColor; }
-button:disabled { opacity: .3; cursor: default; }
-button.text { min-width: 0; }
-button.danger { color: var(--accent); }
-.i { display: block; width: 20px; height: 20px; margin: auto; background: currentColor; -webkit-mask: var(--i) center/contain no-repeat; mask: var(--i) center/contain no-repeat; }
-.ink { border: 0; min-width: 34px; }
-.ink i { display: block; width: 20px; height: 20px; border-radius: 50%; margin: auto; }
-.ink.on i { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px currentColor; }
-.stage { position: relative; flex: 1; overflow: hidden; background: #fff; border-radius: 10px; touch-action: none; user-select: none; -webkit-user-select: none; min-height: 240px; color: #111; }
-.world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-.item { position: absolute; }
-svg.item { overflow: visible; }
-.item.text { white-space: pre-wrap; line-height: 1.3; font-family: system-ui, sans-serif; min-width: 8px; min-height: 1em; }
-.item.formula { white-space: nowrap; }
-.item.formula .katex-display { margin: 0; }
-img.item { pointer-events: none; }
-.item.selected { outline: 2px dashed #1d6fd0; outline-offset: 4px; }
-.preview { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.zoom { position: absolute; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
-.zoom button { background: #fff; color: #111; }
-.badge { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.6); color: #fff; padding: 4px 8px; border-radius: 8px; font-size: 12px; pointer-events: none; }
-.panel { border-top: 1px solid var(--line); padding: 6px 0 0; }
-textarea, input[type="text"], input[type="search"] { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%; }
-textarea { min-height: 72px; resize: vertical; }
-.keys { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
-.keys button { min-width: 38px; height: 34px; font-size: 15px; }
-.preview-formula { min-height: 40px; padding: 6px; background: #fff; color: #111; border-radius: 10px; margin: 6px 0; overflow-x: auto; }
-.warn { color: var(--accent); margin: 6px 0; }
-.hint { color: var(--soft); font-size: 13px; margin: 4px 0; }
-ul { list-style: none; margin: 0; padding: 0; }
-li { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--line); }
-li .open { flex: 1; text-align: start; border: 0; border-radius: 0; height: auto; padding: 10px 4px; opacity: 1; }
-.title { font-weight: 600; }
-.meta { color: var(--soft); font-size: 13px; }
-.empty { color: var(--soft); text-align: center; padding: 40px 0; }
-.timeline { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
-.timeline input { flex: 1; }
+ft-board button.on { opacity: 1; box-shadow: inset 0 0 0 2px currentColor; }
+ft-board .i { display: block; width: 20px; height: 20px; margin: auto; background: currentColor; -webkit-mask: var(--i) center/contain no-repeat; mask: var(--i) center/contain no-repeat; }
+ft-board .ink { border: 0; min-width: 34px; }
+ft-board .ink i { display: block; width: 20px; height: 20px; border-radius: 50%; margin: auto; }
+ft-board .ink.on i { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px currentColor; }
+ft-board .stage { position: relative; flex: 1; overflow: hidden; background: #fff; border-radius: 10px; touch-action: none; user-select: none; -webkit-user-select: none; min-height: 240px; color: #111; }
+ft-board .world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+ft-board .item { position: absolute; }
+ft-board svg.item { overflow: visible; }
+ft-board .item.text { white-space: pre-wrap; line-height: 1.3; font-family: system-ui, sans-serif; min-width: 8px; min-height: 1em; }
+ft-board .item.formula { white-space: nowrap; }
+ft-board .item.formula .katex-display { margin: 0; }
+ft-board img.item { pointer-events: none; }
+ft-board .item.selected { outline: 2px dashed #1d6fd0; outline-offset: 4px; }
+ft-board .preview { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+ft-board .zoom { position: absolute; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
+ft-board .badge { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.6); color: #fff; padding: 4px 8px; border-radius: 8px; font-size: 12px; pointer-events: none; }
+ft-board .panel { border-top: 1px solid var(--line); padding: 6px 0 0; }
+ft-board textarea, ft-board input[type="text"], ft-board input[type="search"] { font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%; }
+ft-board textarea { min-height: 72px; resize: vertical; }
+ft-board .keys { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+ft-board .keys button { min-width: 38px; height: 34px; font-size: 15px; }
+ft-board .preview-formula { min-height: 40px; padding: 6px; background: #fff; color: #111; border-radius: 10px; margin: 6px 0; overflow-x: auto; }
+ft-board .warn { color: var(--accent); margin: 6px 0; }
+ft-board .hint { color: var(--soft); font-size: 13px; margin: 4px 0; }
+ft-board ul { list-style: none; margin: 0; padding: 0; }
+ft-board li { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--line); }
+ft-board li .open { flex: 1; text-align: start; border: 0; border-radius: 0; height: auto; padding: 10px 4px; opacity: 1; }
+ft-board .title { font-weight: 600; }
+ft-board .meta { color: var(--soft); font-size: 13px; }
+ft-board .empty { color: var(--soft); text-align: center; padding: 40px 0; }
+ft-board .timeline { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+ft-board .timeline input { flex: 1; }
 `;
 
-const icon = (name) => `<i class="i" style="--i:url(./icon/${name}.svg)"></i>`;
-const button = (act, label, name, extra = "") => `<button data-act="${act}" aria-label="${escape(label)}" ${extra}>${icon(name)}</button>`;
+/** An Ionicon in a button: Ionic's own `ion-icon` when the app lent it by name, else the one the
+ *  app serves at `./icon/<name>.svg`, painted in the button's colour. Never a picture of ours. */
+const icon = (name) =>
+  globalThis.Ionicons?.map?.has(name)
+    ? `<ion-icon slot="icon-only" name="${name}" aria-hidden="true"></ion-icon>`
+    : `<i slot="icon-only" class="i" style="--i:url(./icon/${name}.svg)" aria-hidden="true"></i>`;
 
-let fontsLoaded = false;
-/** KaTeX's fonts are declared once, in the document: a shadow tree cannot load its own. */
-function loadFonts() {
-  if (fontsLoaded || typeof document === "undefined") return;
-  fontsLoaded = true;
+/** An Ionic button with an icon only: filled when it is the one in use. */
+const button = (act, label, name, { id, on = false, danger = false, disabled = false, fill = "clear", color = "" } = {}) =>
+  `<ion-button data-act="${act}" ${id === undefined ? "" : `data-id="${escape(id)}"`} fill="${on ? "solid" : fill}" ${danger ? 'color="danger"' : color ? `color="${color}"` : ""} aria-label="${escape(label)}" ${disabled ? "disabled" : ""}>${icon(name)}</ion-button>`;
+
+let stylesLoaded = false;
+/** KaTeX's styles and fonts and the board's own, once, in the frame's document: it holds only
+ *  this plugin, and Ionic's global styles do not cross a shadow boundary. */
+function loadStyles() {
+  if (stylesLoaded || typeof document === "undefined") return;
+  stylesLoaded = true;
   const style = document.createElement("style");
-  style.textContent = fontFaces(katexCss);
+  style.textContent = `${fontFaces(katexCss)}\n${withoutFontFaces(katexCss)}\n${STYLE}`;
   document.head.append(style);
 }
 
@@ -129,7 +137,6 @@ function loadFonts() {
 class BoardElement extends HTMLElement {
   constructor() {
     super();
-    this.root = this.attachShadow({ mode: "open" });
     this.lang = "en";
     this.screen = "home";
     this.boards = [];
@@ -154,13 +161,12 @@ class BoardElement extends HTMLElement {
   }
 
   connectedCallback() {
-    loadFonts();
+    loadStyles();
     this.style.height = `${Math.max(480, (globalThis.screen?.availHeight ?? 800) - 150)}px`;
-    this.root.innerHTML = `<style>${STYLE}</style><style>${withoutFontFaces(katexCss)}</style><div class="view"></div>`;
-    this.view = this.root.querySelector(".view");
-    this.root.addEventListener("click", (event) => this.onClick(event));
-    this.root.addEventListener("input", (event) => this.onInput(event));
-    this.root.addEventListener("change", (event) => this.onChange(event));
+    this.view = this;
+    this.addEventListener("click", (event) => this.onClick(event));
+    this.addEventListener("input", (event) => this.onInput(event));
+    this.addEventListener("change", (event) => this.onChange(event));
     globalThis.ft?.onOpen?.((opening) => this.onOpen(opening));
     globalThis.ft?.live?.onMessage?.((data) => this.onLiveMessage(data));
     this.paint();
@@ -312,17 +318,23 @@ class BoardElement extends HTMLElement {
     this.paintBar();
   }
 
+  /** Asks in the app's Ionic alert: the frame has no browser dialogs. Resolves {role, data}. */
+  async ask(options) {
+    const alerts = globalThis.ftIonic?.alertController;
+    if (!alerts) return { role: "cancel" };
+    const alert = await alerts.create(options);
+    await alert.present();
+    return alert.onDidDismiss();
+  }
+
   // ---- Clicks ----
 
   async onClick(event) {
-    const button = event.target.closest("button");
+    const button = event.target.closest("button, ion-button");
     if (!button) return;
     const { act, id, at } = button.dataset;
     const T = (key) => t(this.lang, key);
     switch (act) {
-      case "close":
-        this.leaveBoard();
-        return globalThis.ft.close();
       case "new": {
         const board = new Board({ name: "" });
         await this.keep(board);
@@ -331,14 +343,29 @@ class BoardElement extends HTMLElement {
       case "open":
         return this.open(id);
       case "delete": {
-        if (!confirm(T("confirmDelete"))) return;
+        const { role } = await this.ask({
+          message: T("confirmDelete"),
+          buttons: [
+            { text: T("back"), role: "cancel" },
+            { text: T("delete"), role: "destructive" },
+          ],
+        });
+        if (role !== "destructive") return;
         await this.forget(id);
         return this.paint();
       }
       case "rename": {
         const board = this.boards.find((one) => one.id === id);
-        const name = prompt(T("name"), board?.name ?? "");
-        if (name === null || !board) return;
+        const { role, data } = await this.ask({
+          header: T("rename"),
+          inputs: [{ name: "name", value: board?.name ?? "", placeholder: T("name"), attributes: { "aria-label": T("name") } }],
+          buttons: [
+            { text: T("back"), role: "cancel" },
+            { text: T("done"), role: "confirm" },
+          ],
+        });
+        if (role !== "confirm" || !board) return;
+        const name = String(data?.values?.name ?? "");
         const body = await globalThis.ft.records.get(bodyKey(id));
         const whole = body ? Board.parse(body, { id }) : null;
         if (!whole) return;
@@ -708,37 +735,44 @@ class BoardElement extends HTMLElement {
             <div class="title">${escape(board.name || T("untitled"))}</div>
             <div class="meta">${escape(new Date(board.updatedAt ?? board.createdAt ?? 0).toLocaleString(this.lang))}</div>
           </button>
-          ${button("rename", T("rename"), "text-outline", `data-id="${escape(board.id)}"`)}
-          ${button("delete", T("delete"), "trash-outline", `data-id="${escape(board.id)}" class="danger"`)}
+          ${button("rename", T("rename"), "text-outline", { id: board.id })}
+          ${button("delete", T("delete"), "trash-outline", { id: board.id, danger: true })}
         </li>`,
       )
       .join("");
     this.view.innerHTML = `
-      <div class="bar">
-        ${button("close", T("close"), "close-outline")}
-        <span class="grow"></span>
-        ${button("new", T("newBoard"), "add-outline", 'class="on"')}
-      </div>
-      ${rows ? `<ul>${rows}</ul>` : `<p class="empty">${escape(T("empty"))}</p>`}`;
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="end">${button("new", T("newBoard"), "add-outline", { on: true })}</ion-buttons>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        ${rows ? `<ul>${rows}</ul>` : `<p class="empty">${escape(T("empty"))}</p>`}
+      </ion-content>`;
   }
 
   paintBoard() {
     const T = (key) => t(this.lang, key);
+    // The board sizes itself to the screen: its content does not scroll, the stage pans instead.
     this.view.innerHTML = `
-      <div class="bar" data-bar></div>
-      <div class="stage">
-        <div class="world"></div>
-        <svg class="preview"></svg>
-        <div class="zoom">
-          ${button("zoomIn", T("zoomIn"), "add-outline")}
-          ${button("zoomOut", T("zoomOut"), "remove-outline")}
-          ${button("fit", T("fitAll"), "expand-outline")}
+      <ion-header data-bar></ion-header>
+      <ion-content scroll-y="false">
+        <div class="body">
+          <div class="stage">
+            <div class="world"></div>
+            <svg class="preview"></svg>
+            <div class="zoom">
+              ${button("zoomIn", T("zoomIn"), "add-outline", { fill: "solid", color: "light" })}
+              ${button("zoomOut", T("zoomOut"), "remove-outline", { fill: "solid", color: "light" })}
+              ${button("fit", T("fitAll"), "expand-outline", { fill: "solid", color: "light" })}
+            </div>
+            <span class="badge" data-badge hidden></span>
+          </div>
+          <p class="warn" data-warn hidden></p>
+          <div class="timeline" data-timeline hidden></div>
+          <div class="panel" data-panel hidden></div>
         </div>
-        <span class="badge" data-badge hidden></span>
-      </div>
-      <p class="warn" data-warn hidden></p>
-      <div class="timeline" data-timeline hidden></div>
-      <div class="panel" data-panel hidden></div>`;
+      </ion-content>`;
     const stage = this.stage();
     stage.addEventListener("pointerdown", (event) => this.onPointerDown(event));
     stage.addEventListener("pointermove", (event) => this.onPointerMove(event));
@@ -758,16 +792,21 @@ class BoardElement extends HTMLElement {
     const T = (key) => t(this.lang, key);
     const badge = this.view.querySelector("[data-badge]");
     if (this.replay) {
-      bar.innerHTML = `${button("stopReplay", T("back"), "arrow-back-outline")}<span class="grow"></span><span class="hint">${escape(T("replay"))}</span>`;
+      this.setBar(bar, `<ion-toolbar>
+        <ion-buttons slot="start">${button("stopReplay", T("back"), "arrow-back-outline")}</ion-buttons>
+        <ion-title>${escape(T("replay"))}</ion-title>
+      </ion-toolbar>`);
       if (badge) (badge.textContent = T("replay")), (badge.hidden = false);
       return;
     }
     if (this.readOnly) {
-      bar.innerHTML = `
-        ${button("back", T("back"), "arrow-back-outline")}
-        <span class="grow"></span>
-        ${button("replay", T("replay"), "play-outline", this.board.log.length ? "" : "disabled")}
-        ${button("keep", T("keepCopy"), "save-outline")}`;
+      this.setBar(bar, `<ion-toolbar>
+        <ion-buttons slot="start">${button("back", T("back"), "arrow-back-outline")}</ion-buttons>
+        <ion-buttons slot="end">
+          ${button("replay", T("replay"), "play-outline", { disabled: !this.board.log.length })}
+          ${button("keep", T("keepCopy"), "save-outline")}
+        </ion-buttons>
+      </ion-toolbar>`);
       if (badge) (badge.textContent = T("readOnly")), (badge.hidden = false);
       return;
     }
@@ -779,25 +818,43 @@ class BoardElement extends HTMLElement {
       ["text", "text-outline"],
       ["formula", "calculator-outline"],
     ]
-      .map(([tool, name]) => button("tool", T(tool), name, `data-id="${tool}" class="${this.tool === tool ? "on" : ""}"`))
+      .map(([tool, name]) => button("tool", T(tool), name, { id: tool, on: this.tool === tool }))
       .join("");
     const inks = this.tool === "pen"
       ? INKS.map((colour, at) => `<button class="ink ${this.ink === at ? "on" : ""}" data-act="ink" data-at="${at}" aria-label="${escape(T("colour"))} ${at + 1}"><i style="background:${colour}"></i></button>`).join("") +
-        button("nib", T("width"), "brush-outline", `class="${["", "on", "on"][this.nib]}"`)
+        button("nib", T("width"), "brush-outline", { on: this.nib > 0 })
       : "";
-    bar.innerHTML = `
-      ${button("back", T("back"), "arrow-back-outline")}
-      ${tools}
-      ${button("image", T("image"), "image-outline")}
-      ${button("undo", T("undo"), "arrow-undo-outline", this.board.canUndo ? "" : "disabled")}
-      ${button("redo", T("redo"), "arrow-redo-outline", this.board.canRedo ? "" : "disabled")}
-      ${this.selected ? button("remove", T("remove"), "trash-outline", 'class="danger"') : ""}
-      <span class="grow"></span>
-      ${this.mayLive ? button("live", this.live ? T("liveOn") : T("liveOff"), "play-outline", `class="${this.live ? "on" : ""}"`) : ""}
-      ${button("replay", T("replay"), "time-outline", this.board.log.length ? "" : "disabled")}
-      ${button("save", T("save"), "save-outline")}
-      ${button("send", T("send"), "send-outline")}
-      ${inks ? `<div class="bar" style="width:100%">${inks}</div>` : ""}`;
+    // Three rows, as the bar wrapped before: the way back and what the board does with itself, the
+    // tools, and the pen's colours while the pen is in use.
+    this.setBar(bar, `
+      <ion-toolbar>
+        <ion-buttons slot="start">${button("back", T("back"), "arrow-back-outline")}</ion-buttons>
+        <ion-buttons slot="end">
+          ${this.mayLive ? button("live", this.live ? T("liveOn") : T("liveOff"), "play-outline", { on: Boolean(this.live) }) : ""}
+          ${button("replay", T("replay"), "time-outline", { disabled: !this.board.log.length })}
+          ${button("save", T("save"), "save-outline")}
+          ${button("send", T("send"), "send-outline")}
+        </ion-buttons>
+      </ion-toolbar>
+      <ion-toolbar>
+        <ion-buttons slot="start">
+          ${tools}
+          ${button("image", T("image"), "image-outline")}
+          ${button("undo", T("undo"), "arrow-undo-outline", { disabled: !this.board.canUndo })}
+          ${button("redo", T("redo"), "arrow-redo-outline", { disabled: !this.board.canRedo })}
+          ${this.selected ? button("remove", T("remove"), "trash-outline", { danger: true }) : ""}
+        </ion-buttons>
+      </ion-toolbar>
+      ${inks ? `<ion-toolbar><ion-buttons slot="start">${inks}</ion-buttons></ion-toolbar>` : ""}`);
+  }
+
+  /** A new header in place of the old one, rather than new children in it: Ionic keeps its own
+   *  bookkeeping of what is inside a header. */
+  setBar(bar, html) {
+    const header = document.createElement("ion-header");
+    header.dataset.bar = "";
+    header.innerHTML = html;
+    bar.replaceWith(header);
   }
 
   /** The items on the stage: made, changed or removed by id, so a moving pen does not redraw all. */
@@ -921,10 +978,10 @@ class BoardElement extends HTMLElement {
       <textarea name="edit" placeholder="${escape(T(edit.kind === "formula" ? "latexPlaceholder" : "textPlaceholder"))}" aria-label="${escape(T(edit.kind))}">${escape(edit.value)}</textarea>
       ${keys}
       <div class="bar">
-        ${edit.id ? button("removeEdited", T("remove"), "trash-outline", 'class="danger"') : ""}
+        ${edit.id ? button("removeEdited", T("remove"), "trash-outline", { danger: true }) : ""}
         <span class="grow"></span>
         ${button("cancelEdit", T("back"), "close-outline")}
-        ${button("done", T("done"), "checkmark-outline", 'class="on"')}
+        ${button("done", T("done"), "checkmark-outline", { on: true })}
       </div>`;
     this.paintFormulaPreview();
   }
