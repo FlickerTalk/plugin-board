@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Board, FILE_FORMAT, FILE_MIME, LOCAL, REMOTE, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./src/model.js";
 import { boundsOfAll, camera, fit, hits, itemAt, pan, toScreen, toWorld, zoomAt } from "./src/geometry.js";
 import { NIBS, outlineOf, pathOf, pathOfItem, strokeItem } from "./src/ink.js";
-import { HELLO, Live, PART, Reassembler, SYNC, UPDATE, decode, encode, split } from "./src/live.js";
+import { ASK, BYE, HELLO, Live, PART, Reassembler, SYNC, UPDATE, decode, encode, split } from "./src/live.js";
 import { PALETTE, insert, render } from "./src/formula.js";
 import { LANGUAGES, catalogueOf, t } from "./src/i18n.js";
 import { fontFaces, imagePlacement, isBoardFile, measured, pacing, withoutFontFaces } from "./src/index.js";
@@ -570,6 +570,140 @@ describe("the view", () => {
     await press("live");
     expect(element.live).toBeNull();
     expect(inside().textContent).toContain("not reachable");
+  });
+
+  // A presentation in a call (Plugin API 1.6.0): the app opens the board to lead or to follow.
+  const fresh = async (opening, send = vi.fn(async () => true)) => {
+    const side = fakeCore();
+    side.ft.live.send = send;
+    globalThis.ft = side.ft;
+    const board = document.createElement("ft-board");
+    document.body.append(board);
+    await side.open({ live: true, ...opening });
+    return { side, board };
+  };
+  const deliver = async (side, data) => {
+    globalThis.ft = side.ft;
+    for (const handler of side.heard) await handler(data);
+    await tick();
+  };
+  // Sends what a board has queued now, through its own side: left to its 80 ms timer, it would go
+  // out through whichever side the test switched to by then.
+  const sent = async ({ side, board }) => {
+    globalThis.ft = side.ft;
+    await board.live.flush();
+  };
+
+  it("as the presenter, goes live by itself on the board it shows, with no switch and no send", async () => {
+    ({ side: core, board: element } = await fresh({ presenting: "lead" }));
+    await press("new");
+    expect(element.live).not.toBeNull();
+    expect(decode(core.ft.live.send.mock.calls[0][0])).toMatchObject({ k: HELLO, board: element.board.id });
+    expect(inside().querySelector('[data-act="live"]')).toBeNull();
+    expect(inside().querySelector('[data-act="send"]')).toBeNull();
+  });
+
+  it("as the presenter, stays live while the other side is not there yet, and greets it when it asks", async () => {
+    ({ side: core, board: element } = await fresh({ presenting: "lead" }, vi.fn(async () => false)));
+    await press("new");
+    expect(element.live).not.toBeNull();
+    expect(inside().textContent).not.toContain("not reachable");
+    core.ft.live.send.mockImplementation(async () => true);
+    await deliver(core, encode({ k: ASK, board: "" }));
+    expect(decode(core.ft.live.send.mock.calls.at(-1)[0])).toMatchObject({ k: HELLO, board: element.board.id });
+  });
+
+  it("as a follower, asks for the board on opening and shows it read-only, without drawing tools", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    element = teacher.board;
+    await press("new");
+    teacher.board.board.add({ kind: "text", x: 0, y: 0, text: "lesson" });
+    await sent(teacher);
+    const hello = teacher.side.ft.live.send.mock.calls[0][0];
+
+    const student = await fresh({ presenting: "follow" });
+    expect(decode(student.side.ft.live.send.mock.calls[0][0])).toEqual({ k: ASK, board: "" });
+    await deliver(student.side, hello);
+    expect(student.board.board.id).toBe(teacher.board.board.id);
+    expect(student.board.readOnly).toBe(true);
+    expect(student.board.live).not.toBeNull();
+    expect(student.board.querySelector('[data-act="tool"]')).toBeNull();
+    expect(student.board.querySelector('[data-act="back"]')).toBeNull();
+    expect(student.board.querySelector(':scope > ion-header ion-toolbar ion-button[data-act="keep"]')).not.toBeNull();
+    await deliver(teacher.side, student.side.ft.live.send.mock.calls.at(-1)[0]);
+    await deliver(student.side, teacher.side.ft.live.send.mock.calls.at(-1)[0]);
+    expect(student.board.board.list().map((one) => one.text)).toEqual(["lesson"]);
+  });
+
+  it("gives a follower who comes back the whole board again", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    element = teacher.board;
+    await press("new");
+    teacher.board.board.add({ kind: "text", x: 0, y: 0, text: "lesson" });
+    await sent(teacher);
+    const first = await fresh({ presenting: "follow" });
+    await deliver(first.side, teacher.side.ft.live.send.mock.calls[0][0]);
+    await deliver(teacher.side, first.side.ft.live.send.mock.calls.at(-1)[0]);
+    await deliver(first.side, teacher.side.ft.live.send.mock.calls.at(-1)[0]);
+    expect(first.board.board.list()).toHaveLength(1);
+
+    // The student minimised the call and came back: a new board, empty, that asks.
+    const again = await fresh({ presenting: "follow" });
+    await deliver(teacher.side, again.side.ft.live.send.mock.calls[0][0]);
+    await deliver(again.side, teacher.side.ft.live.send.mock.calls.at(-1)[0]);
+    await deliver(teacher.side, again.side.ft.live.send.mock.calls.at(-1)[0]);
+    await deliver(again.side, teacher.side.ft.live.send.mock.calls.at(-1)[0]);
+    expect(again.board.board.list().map((one) => one.text)).toEqual(["lesson"]);
+  });
+
+  it("as a follower, takes a hello that comes while it is still opening, and says no bye for it", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    element = teacher.board;
+    await press("new");
+    teacher.board.board.add({ kind: "text", x: 0, y: 0, text: "lesson" });
+    await sent(teacher);
+    const hello = teacher.side.ft.live.send.mock.calls[0][0];
+
+    // The student's records answer slowly; the teacher's hello lands in the meantime.
+    const side = fakeCore();
+    let answer;
+    const keys = side.ft.records.keys;
+    side.ft.records.keys = (prefix) => new Promise((resolve) => (answer = () => resolve(keys(prefix))));
+    globalThis.ft = side.ft;
+    const student = document.createElement("ft-board");
+    document.body.append(student);
+    const opening = side.open({ live: true, presenting: "follow" });
+    await deliver(side, hello);
+    answer?.();
+    await opening;
+    await tick();
+    expect(student.board.id).toBe(teacher.board.board.id);
+    expect(student.live).not.toBeNull();
+    expect(side.ft.live.send.mock.calls.map(([data]) => decode(data).k)).not.toContain(BYE);
+    await deliver(teacher.side, side.ft.live.send.mock.calls.at(-1)[0]);
+    await deliver(side, teacher.side.ft.live.send.mock.calls.at(-1)[0]);
+    expect(student.board.list().map((one) => one.text)).toEqual(["lesson"]);
+  });
+
+  it("as the presenter, goes live again when a follower asks after a bye", async () => {
+    ({ side: core, board: element } = await fresh({ presenting: "lead" }));
+    await press("new");
+    await deliver(core, encode({ k: BYE, board: element.board.id }));
+    expect(element.live).toBeNull();
+    await deliver(core, encode({ k: ASK, board: "" }));
+    expect(element.live).not.toBeNull();
+    expect(decode(core.ft.live.send.mock.calls.at(-1)[0])).toMatchObject({ k: HELLO, board: element.board.id });
+  });
+
+  it("as the presenter, keeps one live session when a hello opens a board it did not have", async () => {
+    ({ side: core, board: element } = await fresh({ presenting: "lead" }));
+    const theirs = new Board({ name: "theirs" });
+    await deliver(core, encode({ k: HELLO, board: theirs.id, sv: toBase64(theirs.stateVector()) }));
+    expect(element.board.id).toBe(theirs.id);
+    element.board.add({ kind: "text", x: 0, y: 0, text: "mine" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const updates = core.ft.live.send.mock.calls.filter(([data]) => decode(data).k === UPDATE);
+    expect(updates).toHaveLength(1);
   });
 });
 
