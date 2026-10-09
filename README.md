@@ -35,7 +35,10 @@ ni por el servidor.
   Sin `presenting` nada cambia. Desde la 1.1.1, quien presenta recuerda qué pizarra muestra: si
   sale de la pantalla de la llamada y vuelve (la app cierra el plugin), se abre en esa pizarra y
   vuelve al directo, no en la lista; si la pizarra ya no está, o había vuelto a la lista, se abre
-  la lista.
+  la lista. Desde la 1.1.2 vuelve también con el zoom y el desplazamiento que tenía.
+- **Altura** (1.1.2): en una ventana que el marco llena (la de una herramienta, o la zona de
+  presentar de una llamada: `<html data-fill>` en el marco), la pizarra mide justo lo que el marco,
+  así que los botones de zoom y «Ver todo» quedan dentro. Fuera de eso, mide lo que deja la pantalla.
 - **Abrir con**: `application/x-ftboard` y `image/*` (una imagen abre una pizarra nueva con ella).
 
 ## Qué usa del núcleo
@@ -43,7 +46,7 @@ ni por el servidor.
 | Capacidad     | Para qué                                                              |
 | ------------- | --------------------------------------------------------------------- |
 | `ft.records`  | cada pizarra en dos registros (`board/<id>/meta`, `board/<id>/body`); `storage: large` (256 MB) |
-| `ft.store`    | la pizarra que se presenta (`present`), para volver a ella             |
+| `ft.store`    | la pizarra que se presenta y su cámara (`present`), para volver a ella |
 | `ft.live`     | el directo 1 a 1, en mensajes de ≤ 48 KiB (los grandes van en partes) |
 | `ft.send` / `ft.save` | el fichero `.ftboard` (`send: propose`: lo envía el usuario)  |
 | `ft.pickFile` | las imágenes                                                          |

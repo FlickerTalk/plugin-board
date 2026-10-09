@@ -788,6 +788,33 @@ describe("a presenter that comes back (the call screen left and back)", () => {
     expect(back.side.ft.live.send).not.toHaveBeenCalled();
   });
 
+  // Found on the Lenovo (2026-10-09): back on the board, the presenter's zoom and pan were lost.
+  it("opens the board where the presenter had zoomed and panned it", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    await press(teacher.board, "new");
+    await press(teacher.board, "zoomIn");
+    await press(teacher.board, "zoomIn");
+    teacher.board.setCamera(pan(teacher.board.cam, 30, -12));
+    const cam = { ...teacher.board.cam };
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
+    const back = await again(teacher);
+    expect(back.board.board.id).toBe(teacher.board.board.id);
+    expect(back.board.cam).toEqual(cam);
+    expect(back.board.querySelector(".world").style.transform).toBe(`translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`);
+  });
+
+  it("opens the board a presenter of version 1.1.1 kept, with no camera, fitted as before", async () => {
+    const teacher = await fresh({ presenting: "lead" });
+    await press(teacher.board, "new");
+    const id = teacher.board.board.id;
+    teacher.side.memory.set("present", id);
+
+    const back = await again(teacher);
+    expect(back.board.screen).toBe("board");
+    expect(back.board.board.id).toBe(id);
+  });
+
   it("remembers only what it presents: a board drawn outside a presentation, or followed, is not reopened", async () => {
     const alone = await fresh({});
     await press(alone.board, "new");
@@ -796,6 +823,53 @@ describe("a presenter that comes back (the call screen left and back)", () => {
 
     const back = await again(alone);
     expect(back.board.screen).toBe("home");
+  });
+});
+
+// Found on the phones (2026-10-09): presenting in a call, the frame fills the area above the call's
+// buttons (`<html data-fill>`), but the board took its height from the screen and "Show
+// everything" fell under the frame's edge.
+describe("its height", () => {
+  const root = document.documentElement;
+  let core;
+  let element;
+  const fresh = () => {
+    core = fakeCore();
+    globalThis.ft = core.ft;
+    document.body.innerHTML = "";
+    element = document.createElement("ft-board");
+    document.body.append(element);
+  };
+  const screenHeight = () => `${Math.max(480, (globalThis.screen?.availHeight ?? 800) - 150)}px`;
+  afterEach(() => {
+    delete root.dataset.fill;
+    element.leaveBoard();
+  });
+
+  it("in a frame that fills its window, is exactly the frame's height, never one from the screen", async () => {
+    root.dataset.fill = "1";
+    fresh();
+    expect(element.style.height).toBe("100%");
+    await core.open({ live: true, presenting: "lead" });
+    element.querySelector('[data-act="new"]').click();
+    await tick();
+    expect(element.style.height).toBe("100%");
+    expect(element.style.height).not.toBe(screenHeight());
+    // The zoom keys, "Show everything" among them, sit in the content the frame's height holds.
+    expect(element.querySelector(':scope > ion-content .zoom [data-act="fit"]')).toBeTruthy();
+  });
+
+  it("fills the frame even when the frame said so only when it opened the board", async () => {
+    fresh();
+    root.dataset.fill = "1";
+    await core.open({});
+    expect(element.style.height).toBe("100%");
+  });
+
+  it("elsewhere, keeps the height it takes from the screen", async () => {
+    fresh();
+    await core.open({});
+    expect(element.style.height).toBe(screenHeight());
   });
 });
 

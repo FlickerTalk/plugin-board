@@ -2,8 +2,8 @@
 // infinite canvas; kept on this phone, saved or sent as a `.ftboard` file, opened read-only on the
 // other side, replayed stroke by stroke, and, from a conversation where both have the plugin,
 // drawn live over the direct connection. Nothing leaves this frame but what the user sends.
-// Presenting in a call, it remembers which board it presents (`ft.store`): the app closes it when
-// the call screen is left, and on return it opens that board again.
+// Presenting in a call, it remembers which board it presents and where its camera was (`ft.store`):
+// the app closes it when the call screen is left, and on return it opens that board again, as it was.
 
 import katexCss from "katex/dist/katex.min.css";
 import { Board, FILE_MIME, LOCAL, PREFIX, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./model.js";
@@ -17,6 +17,25 @@ export { Board, Replay, Live, strokeItem, render, insert, PALETTE };
 
 /** The key of the plugin's memory that holds the board a presenter shows. */
 export const PRESENTED = "present";
+/** How long the presenter's camera rests before it is kept: a pinch is kept once, not per move. */
+export const CAMERA_DELAY = 500;
+
+/** The board and camera a presenter kept: `{board, cam}` since 1.1.2, or the board's id alone as
+ *  1.1.1 kept it (no camera then). Null when nothing usable is kept. */
+export function presentedOf(value) {
+  if (typeof value !== "string" || !value) return null;
+  let kept;
+  try {
+    kept = JSON.parse(value);
+  } catch {
+    return { board: value, cam: null };
+  }
+  if (!kept || typeof kept !== "object") return { board: value, cam: null };
+  if (typeof kept.board !== "string" || !kept.board) return null;
+  const cam = kept.cam;
+  const fine = cam && [cam.x, cam.y, cam.zoom].every(Number.isFinite) && cam.zoom >= MIN_ZOOM && cam.zoom <= MAX_ZOOM;
+  return { board: kept.board, cam: fine ? camera(cam) : null };
+}
 
 /** The `@font-face` rules of a stylesheet, pointed at the fonts the package carries, woff2 only. */
 export function fontFaces(css, base = "./dist/fonts/") {
@@ -163,12 +182,13 @@ class BoardElement extends HTMLElement {
     this.replay = null;
     this.warning = "";
     this.saveTimer = null;
+    this.cameraTimer = null;
     this.stopBoard = [];
   }
 
   connectedCallback() {
     loadStyles();
-    this.style.height = `${Math.max(480, (globalThis.screen?.availHeight ?? 800) - 150)}px`;
+    this.fit();
     this.view = this;
     this.addEventListener("click", (event) => this.onClick(event));
     this.addEventListener("input", (event) => this.onInput(event));
@@ -180,7 +200,16 @@ class BoardElement extends HTMLElement {
 
   // ---- What the app hands over ----
 
+  /** In a frame that fills its window (`<html data-fill>`, app 1.6.0: a tool's window, or the
+   *  presentation area of a call) the board is exactly the frame's height; elsewhere, as tall as
+   *  the screen allows. The frame may say so only when it opens the board. */
+  fit() {
+    const filled = globalThis.document?.documentElement?.dataset?.fill !== undefined;
+    this.style.height = filled ? "100%" : `${Math.max(480, (globalThis.screen?.availHeight ?? 800) - 150)}px`;
+  }
+
   async onOpen(opening) {
+    this.fit();
     this.lang = opening.lang || "en";
     this.mayLive = Boolean(opening.live);
     // Opened by the app in a call (1.6.0): lead (live on its own) or follow (read-only).
@@ -232,22 +261,40 @@ class BoardElement extends HTMLElement {
     return Boolean(board);
   }
 
-  /** Opens the board this presenter was showing, if it still has it; false leaves the list. */
+  /** Opens the board this presenter was showing, if it still has it, where its camera was; false
+   *  leaves the list. */
   async resume() {
     try {
-      const id = await globalThis.ft.store?.get(PRESENTED);
-      return Boolean(id) && (await this.open(id));
+      const kept = presentedOf(await globalThis.ft.store?.get(PRESENTED));
+      if (!kept || !(await this.open(kept.board))) return false;
+      if (kept.cam) {
+        this.setCamera(kept.cam);
+        // Kept again at once: showing the board kept it fitted, and the frame may close any time.
+        this.rememberPresented(kept.board);
+      }
+      return true;
     } catch {
       return false;
     }
   }
 
-  /** What a presenter shows, kept so that it opens there again; null when it shows its list. */
+  /** What a presenter shows and its camera, kept so that it opens there again; null when it shows
+   *  its list. */
   rememberPresented(id) {
     const memory = globalThis.ft?.store;
     if (this.presenting !== "lead" || !memory) return;
-    const done = id ? memory.set(PRESENTED, id) : memory.forget(PRESENTED);
+    clearTimeout(this.cameraTimer);
+    this.cameraTimer = null;
+    const done = id ? memory.set(PRESENTED, JSON.stringify({ board: id, cam: this.cam })) : memory.forget(PRESENTED);
     done?.catch?.(() => {});
+  }
+
+  /** The presenter's camera moved: kept once it rests for CAMERA_DELAY. */
+  keepCameraSoon() {
+    if (this.presenting !== "lead" || this.readOnly || !this.board || this.screen !== "board") return;
+    clearTimeout(this.cameraTimer);
+    const id = this.board.id;
+    this.cameraTimer = setTimeout(() => this.rememberPresented(id), CAMERA_DELAY);
   }
 
   /** Puts a board on screen, editable unless it is someone else's file. */
@@ -272,6 +319,8 @@ class BoardElement extends HTMLElement {
   }
 
   leaveBoard() {
+    clearTimeout(this.cameraTimer);
+    this.cameraTimer = null;
     for (const stop of this.stopBoard) stop();
     this.stopBoard = [];
     if (this.live) {
@@ -596,6 +645,7 @@ class BoardElement extends HTMLElement {
     this.cam = cam;
     const world = this.view.querySelector(".world");
     if (world) world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`;
+    this.keepCameraSoon();
   }
 
   fitAll() {
