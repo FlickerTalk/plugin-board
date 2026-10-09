@@ -604,6 +604,8 @@ describe("with the Ionic the app lends", () => {
   });
 
   afterEach(async () => {
+    // A save still waiting would land in the next test's core: it is done now, in this one's.
+    element.leaveBoard();
     for (const alert of document.querySelectorAll("ion-alert")) await alert.dismiss();
     delete globalThis.Ionicons;
   });
