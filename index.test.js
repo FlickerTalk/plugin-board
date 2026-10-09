@@ -1,9 +1,9 @@
 // The plugin's own tests (Plan §53, plan-board): the board as a document, where things are, the
 // stroke, the live channel between two boards, the formulas, the catalogue, and the view against
 // a fake core.
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Board, FILE_FORMAT, FILE_MIME, LOCAL, REMOTE, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./src/model.js";
 import { boundsOfAll, camera, fit, hits, itemAt, pan, toScreen, toWorld, zoomAt } from "./src/geometry.js";
 import { NIBS, outlineOf, pathOf, pathOfItem, strokeItem } from "./src/ink.js";
@@ -11,6 +11,7 @@ import { HELLO, Live, PART, Reassembler, SYNC, UPDATE, decode, encode, split } f
 import { PALETTE, insert, render } from "./src/formula.js";
 import { LANGUAGES, catalogueOf, t } from "./src/i18n.js";
 import { fontFaces, imagePlacement, isBoardFile, measured, pacing, withoutFontFaces } from "./src/index.js";
+import manifest from "./module.json";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -355,13 +356,23 @@ function fakeCore() {
 describe("the view", () => {
   let core;
   let element;
-  const inside = () => element.shadowRoot;
+  // In the page, not in a shadow root: Ionic's global styles do not cross a shadow boundary.
+  const inside = () => element;
   const press = async (act, extra = "") => {
     const button = inside().querySelector(`[data-act="${act}"]${extra}`);
     if (!button) throw new Error(`no button ${act}`);
     button.click();
     await tick();
     await tick();
+  };
+  /** The app's Ionic alert, answered as a tap on one of its buttons would. */
+  const answer = async (role, values) => {
+    let alert = null;
+    for (let wait = 0; wait < 50 && !(alert = document.querySelector("ion-alert")); wait += 1) await tick();
+    if (!alert) throw new Error("no alert");
+    await alert.dismiss(values ? { values } : undefined, role);
+    for (let wait = 0; wait < 5; wait += 1) await tick();
+    return alert;
   };
   const touch = (type, x, y, id = 1) => {
     const event = new Event(type, { bubbles: true });
@@ -372,8 +383,6 @@ describe("the view", () => {
   beforeEach(async () => {
     core = fakeCore();
     globalThis.ft = core.ft;
-    globalThis.confirm = () => true;
-    globalThis.prompt = () => "Renamed";
     document.body.innerHTML = "";
     element = document.createElement("ft-board");
     document.body.append(element);
@@ -400,8 +409,10 @@ describe("the view", () => {
     await press("back");
     expect(inside().querySelectorAll("li")).toHaveLength(1);
     await press("rename");
+    await answer("confirm", { name: "Renamed" });
     expect(inside().textContent).toContain("Renamed");
     await press("delete");
+    await answer("destructive");
     expect(inside().textContent).toContain("No boards yet");
     expect(core.records.size).toBe(0);
   });
@@ -559,6 +570,165 @@ describe("the view", () => {
     await press("live");
     expect(element.live).toBeNull();
     expect(inside().textContent).toContain("not reachable");
+  });
+});
+
+describe("with the Ionic the app lends", () => {
+  let core;
+  let element;
+  const press = async (act, extra = "") => {
+    const button = element.querySelector(`[data-act="${act}"]${extra}`);
+    if (!button) throw new Error(`no button ${act}`);
+    button.click();
+    await tick();
+    await tick();
+  };
+  // Ionic moves a button's label to the native button inside it once it has drawn.
+  const label = (button) => button.getAttribute("aria-label") ?? button.shadowRoot?.querySelector("button")?.getAttribute("aria-label");
+  const alertShown = async () => {
+    for (let wait = 0; wait < 50; wait += 1) {
+      const alert = document.querySelector("ion-alert");
+      if (alert) return alert;
+      await tick();
+    }
+    return null;
+  };
+
+  beforeEach(async () => {
+    core = fakeCore();
+    globalThis.ft = core.ft;
+    document.body.innerHTML = "";
+    element = document.createElement("ft-board");
+    document.body.append(element);
+    await core.open({ live: true });
+  });
+
+  afterEach(async () => {
+    // A save still waiting would land in the next test's core: it is done now, in this one's.
+    element.leaveBoard();
+    for (const alert of document.querySelectorAll("ion-alert")) await alert.dismiss();
+    delete globalThis.Ionicons;
+  });
+
+  // Only an app that lends Ionic can show it (app 1.6.0): an older one keeps the version it has.
+  it("asks for an app that lends Ionic", () => {
+    expect(manifest.minCoreVersion).toBe("1.6.0");
+  });
+
+  it("draws its list in the page, in Ionic's header and content, with no close of its own", async () => {
+    expect(element.shadowRoot).toBe(null);
+    expect(element.querySelector(":scope > ion-header > ion-toolbar")).toBeTruthy();
+    expect(element.querySelector(":scope > ion-content")).toBeTruthy();
+    // The app's tool window has the way out.
+    expect(element.querySelector('[data-act="close"]')).toBe(null);
+    const add = element.querySelector('ion-toolbar ion-button[data-act="new"]');
+    expect(label(add)).toBe("New board");
+    await press("new");
+    await press("back");
+    const row = element.querySelector(":scope > ion-content li");
+    expect(row).toBeTruthy();
+    for (const act of ["rename", "delete"]) expect(label(row.querySelector(`ion-button[data-act="${act}"]`)), act).toBeTruthy();
+    expect(row.querySelector('ion-button[data-act="delete"]').getAttribute("color")).toBe("danger");
+  });
+
+  it("draws a board in Ionic's header, its stage in a content that does not scroll", async () => {
+    await press("new");
+    const header = element.querySelector(":scope > ion-header");
+    expect(header.querySelectorAll(":scope > ion-toolbar").length).toBeGreaterThanOrEqual(2);
+    for (const act of ["back", "tool", "image", "undo", "redo", "live", "replay", "save", "send"]) {
+      const button = header.querySelector(`ion-toolbar ion-button[data-act="${act}"]`);
+      expect(button, act).toBeTruthy();
+      expect(label(button), act).toBeTruthy();
+    }
+    // The pen's colours, in a toolbar of their own.
+    expect(header.querySelectorAll('ion-toolbar [data-act="ink"]')).toHaveLength(5);
+    const content = element.querySelector(":scope > ion-content");
+    expect(content.getAttribute("scroll-y")).toBe("false");
+    expect(content.querySelector(".stage")).toBeTruthy();
+    for (const act of ["zoomIn", "zoomOut", "fit"]) expect(content.querySelector(`.zoom ion-button[data-act="${act}"]`), act).toBeTruthy();
+  });
+
+  it("shows the tool in use as a filled button", async () => {
+    await press("new");
+    const fill = (tool) => element.querySelector(`ion-button[data-act="tool"][data-id="${tool}"]`).getAttribute("fill");
+    expect(fill("pen")).toBe("solid");
+    expect(fill("text")).not.toBe("solid");
+    await press("tool", '[data-id="text"]');
+    expect(fill("text")).toBe("solid");
+    expect(fill("pen")).not.toBe("solid");
+  });
+
+  it("can undo nothing until something is drawn", async () => {
+    await press("new");
+    expect(element.querySelector('ion-button[data-act="undo"]').disabled).toBe(true);
+    element.board.add({ kind: "text", x: 0, y: 0, text: "x" });
+    element.paintBar();
+    expect(element.querySelector('ion-button[data-act="undo"]').disabled).toBe(false);
+  });
+
+  // The frame has no browser dialogs (`confirm` and `prompt` answer nothing there): Ionic's alert.
+  it("asks with an Ionic alert before deleting, and keeps the board when the answer is no", async () => {
+    globalThis.confirm = () => {
+      throw new Error("no browser dialogs in the frame");
+    };
+    await press("new");
+    await press("back");
+    await press("delete");
+    const alert = await alertShown();
+    expect(alert).toBeTruthy();
+    expect(alert.message).toBe("Delete this board? It is gone for good.");
+    expect(alert.buttons.map((one) => one.role)).toEqual(["cancel", "destructive"]);
+    await alert.dismiss(undefined, "cancel");
+    await tick();
+    expect(core.records.size).toBe(2);
+    await press("delete");
+    await (await alertShown()).dismiss(undefined, "destructive");
+    await tick();
+    await tick();
+    expect(core.records.size).toBe(0);
+    delete globalThis.confirm;
+  });
+
+  it("renames a board in an Ionic alert with a field", async () => {
+    globalThis.prompt = () => {
+      throw new Error("no browser dialogs in the frame");
+    };
+    await press("new");
+    await press("back");
+    await press("rename");
+    const alert = await alertShown();
+    expect(alert.inputs).toEqual([expect.objectContaining({ name: "name", value: "" })]);
+    await alert.dismiss({ values: { name: "  Geometry  " } }, "confirm");
+    for (let wait = 0; wait < 5; wait += 1) await tick();
+    expect(element.textContent).toContain("Geometry");
+    delete globalThis.prompt;
+  });
+
+  it("draws an Ionicon the app lent by name with ion-icon, and the one it serves otherwise", async () => {
+    expect(element.querySelector('[data-act="new"] ion-icon')).toBe(null);
+    expect(element.querySelector('[data-act="new"] [slot="icon-only"]').getAttribute("style")).toContain("./icon/add-outline.svg");
+    globalThis.Ionicons = { map: new Map([["add-outline", "data:image/svg+xml;utf8,<svg></svg>"]]) };
+    element.paint();
+    expect(element.querySelector('[data-act="new"] ion-icon[slot="icon-only"]').getAttribute("name")).toBe("add-outline");
+  });
+});
+
+describe("the package", () => {
+  const dist = join(import.meta.dirname, "dist");
+  const files = readdirSync(dist, { recursive: true }).filter((file) => statSync(join(dist, file)).isFile());
+
+  // Ionic is the app's, lent to the frame: a copy in the package would be a second one, and heavy.
+  it("carries no Ionic of its own", () => {
+    const code = readFileSync(join(dist, "index.js"), "utf8");
+    expect(code).not.toMatch(/@ionic\/core|ionicframework|stencil|defineCustomElement|__registerHost/i);
+    expect(code).not.toMatch(/^\s*import\s.*from\s+["'](?!\.\/)/m);
+  });
+
+  // Within what the catalogue takes (plugin-sdk): 8 MB, 256 files.
+  it("is within the catalogue's limits", () => {
+    const bytes = files.reduce((sum, file) => sum + statSync(join(dist, file)).size, 0);
+    expect(bytes).toBeLessThanOrEqual(8 * 1024 * 1024);
+    expect(files.length).toBeLessThanOrEqual(256);
   });
 });
 

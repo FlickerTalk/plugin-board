@@ -40,8 +40,14 @@ ni por el servidor.
 | `ft.pickFile` | las imágenes                                                          |
 | `onOpen`      | `file` (abrir con), `live` (si el directo es posible), `lang`         |
 
-Necesita el núcleo **1.1.0** (`minCoreVersion`). El contrato está en
+Necesita el núcleo **1.6.0** (`minCoreVersion`). El contrato está en
 [plugin-sdk](https://github.com/FlickerTalk/plugin-sdk).
+
+Desde la 1.0.3 la ventana va en los envoltorios de Ionic que la app presta al marco (barras en
+`ion-header > ion-toolbar`, cuerpo en `ion-content`, botones de Ionic, confirmar y renombrar con
+`ion-alert`), así que se ve como el resto de FlickerTalk; el lienzo es el de siempre. El paquete no
+lleva Ionic: `@ionic/core` es solo `devDependency`, para que los tests pinten lo mismo que el
+teléfono.
 
 ## Formato del fichero
 

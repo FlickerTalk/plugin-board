@@ -1,9 +1,9 @@
 {
   "id": "com.flickertalk.board",
   "name": "Board",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "icon": "easel-outline",
-  "minCoreVersion": "1.1.0",
+  "minCoreVersion": "1.6.0",
   "components": [
     "ft-board"
   ],
