@@ -32,7 +32,10 @@ ni por el servidor.
   presenta (`lead`) entra en directo él solo con la pizarra que muestra, sin el interruptor de
   directo ni «enviar», y vuelve a saludar cuando el otro lo pide (`ask`); quien mira (`follow`)
   ve la pizarra en solo lectura, sin herramientas ni vuelta a la lista, y puede guardar una copia.
-  Sin `presenting` nada cambia.
+  Sin `presenting` nada cambia. Desde la 1.1.1, quien presenta recuerda qué pizarra muestra: si
+  sale de la pantalla de la llamada y vuelve (la app cierra el plugin), se abre en esa pizarra y
+  vuelve al directo, no en la lista; si la pizarra ya no está, o había vuelto a la lista, se abre
+  la lista.
 - **Abrir con**: `application/x-ftboard` y `image/*` (una imagen abre una pizarra nueva con ella).
 
 ## Qué usa del núcleo
@@ -40,6 +43,7 @@ ni por el servidor.
 | Capacidad     | Para qué                                                              |
 | ------------- | --------------------------------------------------------------------- |
 | `ft.records`  | cada pizarra en dos registros (`board/<id>/meta`, `board/<id>/body`); `storage: large` (256 MB) |
+| `ft.store`    | la pizarra que se presenta (`present`), para volver a ella             |
 | `ft.live`     | el directo 1 a 1, en mensajes de ≤ 48 KiB (los grandes van en partes) |
 | `ft.send` / `ft.save` | el fichero `.ftboard` (`send: propose`: lo envía el usuario)  |
 | `ft.pickFile` | las imágenes                                                          |
