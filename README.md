@@ -13,13 +13,21 @@ ni por el servidor.
 
 ## Qué hace
 
-- **Lienzo infinito**: desplazar con un dedo (herramienta «mano»), acercar con dos (o rueda +
-  Ctrl), botones de zoom y «ver todo».
+- **Lienzo infinito**: desplazar con un dedo (con «seleccionar», tocando fuera de los elementos),
+  acercar con dos (o rueda + Ctrl), botones de zoom y «ver todo».
 - **Trazo** (`perfect-freehand`, MIT) con presión si el lápiz la da; cinco colores, tres grosores.
 - **Texto** y **fórmulas** (KaTeX, MIT): se tocan para colocarlas; la fórmula se escribe en LaTeX
   o con la paleta (fracción, raíz, potencias, sumatorio, integral, griegas…), con vista previa.
 - **Imágenes**: del selector del sistema, colocadas en el centro de la vista.
-- **Seleccionar, mover, quitar, deshacer y rehacer** (solo lo que hizo este teléfono).
+- **Seleccionar, mover y quitar**: la herramienta «seleccionar» lleva un icono de selección. Desde
+  la 1.1.3, con un elemento seleccionado aparece un botón rojo de quitar junto a su esquina
+  superior derecha, que sigue al zoom y al desplazamiento y nunca se sale del lienzo (el de la
+  barra sigue ahí).
+- **Goma** (1.1.3), detrás del rotulador: quita los trazos que toca el dedo, medidos por su línea
+  y no por la caja que los rodea. Solo tinta: un texto, una fórmula o una imagen se quitan
+  seleccionándolos, para no borrar una imagen sin querer. Lo que se lleva un gesto vuelve con un
+  solo «deshacer». La app no presta ningún icono de goma: usa `close-outline`.
+- **Deshacer y rehacer** (solo lo que hizo este teléfono).
 - **Guardar** o **enviar** la pizarra como `.ftboard` (JSON: instantánea + registro de cambios
   con hora). Un `.ftboard` recibido se abre **en solo lectura**, con «guardar una copia».
 - **Reproducir**: la línea de tiempo recorre el registro de cambios; con «play» va al ritmo al
