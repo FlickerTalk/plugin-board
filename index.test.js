@@ -832,17 +832,21 @@ describe("the view", () => {
     const id = element.board.list()[0].id;
     await press("tool", '[data-id="select"]');
     expect(pick().hidden).toBe(true);
+    const bar = () => [...inside().querySelectorAll(":scope > ion-header [data-act]")].map((one) => `${one.dataset.act}:${one.dataset.id ?? ""}`);
+    const before = bar();
     touch("pointerdown", 100, 100);
     touch("pointerup", 100, 100);
     expect(element.selected).toBe(id);
+    expect(bar(), "selecting leaves the bar as it was").toEqual(before);
     expect(pick().hidden).toBe(false);
     expect(placed()).toEqual(corner(id));
     const remove = pick().querySelector('ion-button[data-act="remove"]');
     expect(remove.getAttribute("color")).toBe("danger");
     expect(remove.innerHTML).toContain("trash-outline");
     expect(labelOf(remove)).toBe("Remove");
-    // The toolbar keeps its own.
-    expect(inside().querySelector(':scope > ion-header ion-button[data-act="remove"]')).not.toBeNull();
+    // The only delete: the bar has none, so it does not grow a row and push the stage down.
+    expect(inside().querySelectorAll('[data-act="remove"]')).toHaveLength(1);
+    expect(inside().querySelector(':scope > ion-header [data-act="remove"]')).toBeNull();
     remove.click();
     await tick();
     expect(element.board.list()).toHaveLength(0);
