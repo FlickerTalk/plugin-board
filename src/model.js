@@ -14,6 +14,9 @@ export const FILE_VERSION = 1;
 export const LOCAL = "local";
 export const REMOTE = "remote";
 
+/** How close in time two changes of this phone must be for Yjs to join them in one undo. */
+const CAPTURE = 300;
+
 /** An id for a board or an item: time first, so a list sorts as things were made. */
 export function newId(now = Date.now()) {
   const random = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, "0");
@@ -54,7 +57,7 @@ export class Board {
     this.items = this.doc.getMap("items");
     this.log = [];
     this.listeners = new Set();
-    this.undoManager = new Y.UndoManager(this.items, { trackedOrigins: new Set([LOCAL]), captureTimeout: 300 });
+    this.undoManager = new Y.UndoManager(this.items, { trackedOrigins: new Set([LOCAL]), captureTimeout: CAPTURE });
     this.doc.on("update", (update, origin) => {
       const entry = { t: Date.now(), u: toBase64(update) };
       this.log.push(entry);
@@ -117,6 +120,26 @@ export class Board {
     if (!this.items.has(id)) return false;
     this.doc.transact(() => this.items.delete(id), origin);
     this.undoManager.stopCapturing();
+    return true;
+  }
+
+  /** Opens a step of undo that takes in every `erase` until `endStep()`, however long it lasts:
+   *  what an eraser takes in one gesture comes back with one undo. */
+  beginStep() {
+    this.undoManager.stopCapturing();
+    this.undoManager.captureTimeout = Infinity;
+  }
+
+  /** Closes the step `beginStep()` opened: what comes next is a step of its own. */
+  endStep() {
+    this.undoManager.captureTimeout = CAPTURE;
+    this.undoManager.stopCapturing();
+  }
+
+  /** Removes an item within the open step of undo; false if it is gone already. */
+  erase(id, origin = LOCAL) {
+    if (!this.items.has(id)) return false;
+    this.doc.transact(() => this.items.delete(id), origin);
     return true;
   }
 

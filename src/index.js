@@ -7,7 +7,7 @@
 
 import katexCss from "katex/dist/katex.min.css";
 import { Board, FILE_MIME, LOCAL, PREFIX, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./model.js";
-import { MAX_ZOOM, MIN_ZOOM, boundsOf, camera, distance, fit, itemAt, middle, pan, toWorld, zoomAt } from "./geometry.js";
+import { MAX_ZOOM, MIN_ZOOM, boundsOf, camera, cornerPlacement, distance, fit, itemAt, middle, pan, toWorld, touchesInk, zoomAt } from "./geometry.js";
 import { INKS, NIBS, outlineOf, pathOf, pathOfItem, strokeItem } from "./ink.js";
 import { ASK, BYE, HELLO, Live, decode, encode } from "./live.js";
 import { PALETTE, insert, render } from "./formula.js";
@@ -19,6 +19,10 @@ export { Board, Replay, Live, strokeItem, render, insert, PALETTE };
 export const PRESENTED = "present";
 /** How long the presenter's camera rests before it is kept: a pinch is kept once, not per move. */
 export const CAMERA_DELAY = 500;
+/** The size, on screen, of the delete button beside a selected item. */
+const PICK = 40;
+/** How far from a stroke, on screen, the eraser still takes it: a finger is not a pin. */
+const ERASER_REACH = 8;
 
 /** The board and camera a presenter kept: `{board, cam}` since 1.1.2, or the board's id alone as
  *  1.1.1 kept it (no camera then). Null when nothing usable is kept. */
@@ -115,6 +119,8 @@ ft-board .item.formula .katex-display { margin: 0; }
 ft-board img.item { pointer-events: none; }
 ft-board .item.selected { outline: 2px dashed #1d6fd0; outline-offset: 4px; }
 ft-board .preview { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+ft-board .pick { position: absolute; left: 0; top: 0; z-index: 1; }
+ft-board .pick ion-button { margin: 0; width: ${PICK}px; height: ${PICK}px; --padding-start: 0; --padding-end: 0; --border-radius: 50%; }
 ft-board .zoom { position: absolute; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
 ft-board .badge { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.6); color: #fff; padding: 4px 8px; border-radius: 8px; font-size: 12px; pointer-events: none; }
 ft-board .panel { border-top: 1px solid var(--line); padding: 6px 0 0; }
@@ -645,6 +651,7 @@ class BoardElement extends HTMLElement {
     this.cam = cam;
     const world = this.view.querySelector(".world");
     if (world) world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`;
+    this.paintPick();
     this.keepCameraSoon();
   }
 
@@ -671,12 +678,16 @@ class BoardElement extends HTMLElement {
   // ---- Pointers ----
 
   onPointerDown(event) {
+    // A button on the stage (the zoom, the delete beside a selection) is pressed: not drawn on,
+    // dragged or panned, and not captured, so its click lands on it.
+    if (event.target?.closest?.("ion-button, button")) return;
     const stage = this.stage();
     stage.setPointerCapture?.(event.pointerId);
     const at = this.local(event);
     this.pointers.set(event.pointerId, at);
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()];
+      if (this.gesture?.kind === "erase") this.board.endStep();
       this.gesture = { kind: "pinch", distance: distance(a, b), middle: middle(a, b), cam: this.cam };
       this.discardPreview();
       return;
@@ -686,6 +697,11 @@ class BoardElement extends HTMLElement {
     if (editable && this.tool === "pen") {
       this.gesture = { kind: "ink", points: [{ ...world, pressure: event.pressure || 0.5 }] };
       this.paintPreview();
+    } else if (editable && this.tool === "eraser") {
+      // Everything one gesture takes comes back with one undo.
+      this.gesture = { kind: "erase", last: world };
+      this.board.beginStep();
+      this.eraseAlong(world, world);
     } else if (editable && (this.tool === "text" || this.tool === "formula")) {
       this.gesture = { kind: "place", at: world };
     } else if (editable && this.tool === "select") {
@@ -720,6 +736,10 @@ class BoardElement extends HTMLElement {
     } else if (gesture.kind === "ink") {
       gesture.points.push({ ...toWorld(this.cam, at), pressure: event.pressure || 0.5 });
       this.paintPreview();
+    } else if (gesture.kind === "erase") {
+      const world = toWorld(this.cam, at);
+      this.eraseAlong(gesture.last, world);
+      gesture.last = world;
     } else if (gesture.kind === "pan") {
       this.setCamera(pan(gesture.cam, at.x - gesture.from.x, at.y - gesture.from.y));
     } else if (gesture.kind === "drag") {
@@ -728,6 +748,8 @@ class BoardElement extends HTMLElement {
       if (Math.hypot(dx, dy) > 2) gesture.moved = true;
       const node = this.nodes.get(gesture.id);
       if (node && gesture.moved) node.style.translate = `${dx}px ${dy}px`;
+      // The delete button comes back beside the item where it is dropped.
+      if (gesture.moved) this.view.querySelector("[data-pick]")?.setAttribute("hidden", "");
     }
   }
 
@@ -745,6 +767,9 @@ class BoardElement extends HTMLElement {
       this.discardPreview();
       const item = strokeItem(gesture.points, { color: INKS[this.ink], size: NIBS[this.nib] });
       if (item) this.board.add(item);
+      this.paintBar();
+    } else if (gesture.kind === "erase") {
+      this.board.endStep();
       this.paintBar();
     } else if (gesture.kind === "place") {
       // The `click` that trails this tap fires before any timer: the panel is painted after it,
@@ -767,6 +792,15 @@ class BoardElement extends HTMLElement {
     event.preventDefault();
     if (event.ctrlKey || event.metaKey) this.setCamera(zoomAt(this.cam, event.deltaY < 0 ? 1.1 : 0.9, this.local(event)));
     else this.setCamera(pan(this.cam, -event.deltaX, -event.deltaY));
+  }
+
+  /** Takes away every stroke the finger touched on its way between two world points: ink only, so
+   *  a text, a formula or an image goes only when it is selected and removed. */
+  eraseAlong(from, to) {
+    const slack = ERASER_REACH / this.cam.zoom;
+    for (const item of this.board.list()) {
+      if (item.kind === "ink" && touchesInk(item, from, to, slack)) this.board.erase(item.id);
+    }
   }
 
   // ---- Replay ----
@@ -869,6 +903,7 @@ class BoardElement extends HTMLElement {
           <div class="stage">
             <div class="world"></div>
             <svg class="preview"></svg>
+            <div class="pick" data-pick hidden>${button("remove", T("remove"), "trash-outline", { danger: true, fill: "solid" })}</div>
             <div class="zoom">
               ${button("zoomIn", T("zoomIn"), "add-outline", { fill: "solid", color: "light" })}
               ${button("zoomOut", T("zoomOut"), "remove-outline", { fill: "solid", color: "light" })}
@@ -929,8 +964,10 @@ class BoardElement extends HTMLElement {
     if (badge) badge.hidden = !this.live;
     if (badge && this.live) badge.textContent = T("live");
     const tools = [
-      ["select", "hand-left-outline"],
+      ["select", "scan-outline"],
       ["pen", "pencil-outline"],
+      // The app lends no eraser among its icons (app 1.6.0): the closest one it lends.
+      ["eraser", "close-outline"],
       ["text", "text-outline"],
       ["formula", "calculator-outline"],
     ]
@@ -1004,6 +1041,21 @@ class BoardElement extends HTMLElement {
         this.sizes.delete(id);
       }
     }
+    this.paintPick();
+  }
+
+  /** The delete button beside the selected item: centred on its box's top-right corner, wherever
+   *  the camera puts it, and never out of the stage. Hidden while nothing is selected. */
+  paintPick() {
+    const pick = this.view.querySelector("[data-pick]");
+    if (!pick) return;
+    const item = this.selected ? this.shownItems().find((one) => one.id === this.selected) : null;
+    pick.hidden = !item;
+    if (!item) return;
+    const box = this.stage().getBoundingClientRect();
+    const at = cornerPlacement(boundsOf(item), this.cam, { w: box.width || 360, h: box.height || 480 }, PICK);
+    pick.style.left = `${at.x}px`;
+    pick.style.top = `${at.y}px`;
   }
 
   measure(id, node) {
