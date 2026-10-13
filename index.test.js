@@ -799,6 +799,16 @@ describe("the view", () => {
     for (const point of points.slice(1)) touch("pointermove", ...point, id);
     touch("pointerup", ...points.at(-1), id);
   };
+  /** The points a finger gives along a path through these corners: one every 5 px, as on a phone. */
+  const along = (...corners) => {
+    const points = [corners[0]];
+    for (let index = 1; index < corners.length; index += 1) {
+      const [[x0, y0], [x1, y1]] = [corners[index - 1], corners[index]];
+      const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 5));
+      for (let step = 1; step <= steps; step += 1) points.push([x0 + ((x1 - x0) * step) / steps, y0 + ((y1 - y0) * step) / steps]);
+    }
+    return points;
+  };
   const labelOf = (button) => button.getAttribute("aria-label") ?? button.shadowRoot?.querySelector("button")?.getAttribute("aria-label");
   const pick = () => inside().querySelector(".stage [data-pick]");
   const placed = () => ({ x: parseFloat(pick().style.left), y: parseFloat(pick().style.top) });
@@ -860,6 +870,23 @@ describe("the view", () => {
     expect(element.selected).toBe(id);
   });
 
+  it("hides the delete button while the selected item is dragged, and puts it back at its new place", async () => {
+    await press("new");
+    drag([[40, 100], [100, 100], [160, 100]]);
+    const id = element.board.list()[0].id;
+    await press("tool", '[data-id="select"]');
+    touch("pointerdown", 100, 100);
+    touch("pointerup", 100, 100);
+    const before = placed();
+    touch("pointerdown", 100, 100);
+    touch("pointermove", 130, 150);
+    expect(pick().hidden).toBe(true);
+    touch("pointerup", 130, 150);
+    expect(pick().hidden).toBe(false);
+    expect(placed()).toEqual(corner(id));
+    expect(placed()).toEqual({ x: before.x + 30, y: before.y + 50 });
+  });
+
   it("removes a selected text with the button beside it, without opening it to edit", async () => {
     await press("new");
     const id = element.board.add({ kind: "text", x: 80, y: 80, text: "gone" });
@@ -890,7 +917,7 @@ describe("the view", () => {
     const eraser = inside().querySelector('ion-button[data-act="tool"][data-id="eraser"]');
     expect(labelOf(eraser)).toBe("Eraser");
     drag([[40, 100], [100, 100], [160, 100]]);
-    drag([[40, 200], [160, 200], [160, 320]]);
+    drag(along([40, 200], [160, 200], [160, 320]));
     const [line, bend] = element.board.list();
     await press("tool", '[data-id="eraser"]');
     expect(inside().querySelector('ion-button[data-act="tool"][data-id="eraser"]').getAttribute("fill")).toBe("solid");
@@ -931,6 +958,11 @@ describe("the view", () => {
     touch("pointerup", 100, 200);
     expect(element.board.list()).toHaveLength(0);
     expect(inside().querySelector('ion-button[data-act="undo"]').disabled).toBe(false);
+    // What comes after the gesture is a step of its own.
+    await press("tool", '[data-id="pen"]');
+    drag([[40, 300], [160, 300]]);
+    await press("undo");
+    expect(element.board.list()).toHaveLength(0);
     await press("undo");
     expect(element.board.list()).toHaveLength(2);
   });
