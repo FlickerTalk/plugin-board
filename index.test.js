@@ -5,7 +5,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Board, FILE_FORMAT, FILE_MIME, LOCAL, REMOTE, Replay, bodyKey, fromBase64, metaKey, newId, toBase64 } from "./src/model.js";
-import { boundsOfAll, camera, fit, hits, itemAt, pan, toScreen, toWorld, zoomAt } from "./src/geometry.js";
+import { boundsOfAll, camera, cornerPlacement, fit, hits, itemAt, pan, toScreen, toWorld, touchesInk, zoomAt } from "./src/geometry.js";
 import { NIBS, outlineOf, pathOf, pathOfItem, strokeItem } from "./src/ink.js";
 import { ASK, BYE, HELLO, Live, PART, Reassembler, SYNC, UPDATE, decode, encode, split } from "./src/live.js";
 import { PALETTE, insert, render } from "./src/formula.js";
@@ -112,6 +112,37 @@ describe("a board", () => {
     expect(new Replay([]).timeAt(0)).toBeNull();
   });
 
+  it("gives back everything an eraser took in one gesture with one undo, however long it lasted", async () => {
+    const board = new Board();
+    const a = board.add({ kind: "text", x: 0, y: 0, text: "a" });
+    const b = board.add({ kind: "text", x: 0, y: 0, text: "b" });
+    board.add({ kind: "text", x: 0, y: 0, text: "c" });
+    board.beginStep();
+    expect(board.erase(a)).toBe(true);
+    // Slower than the window in which Yjs joins changes by itself.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(board.erase(b)).toBe(true);
+    expect(board.erase("nobody")).toBe(false);
+    board.endStep();
+    expect(board.list().map((one) => one.text)).toEqual(["c"]);
+    board.undo();
+    expect(board.list().map((one) => one.text)).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps what was done just before and just after an eraser's gesture as steps of their own", () => {
+    const board = new Board();
+    const a = board.add({ kind: "text", x: 0, y: 0, text: "a" });
+    board.add({ kind: "text", x: 0, y: 0, text: "drawn just before" });
+    board.beginStep();
+    board.erase(a);
+    board.endStep();
+    board.add({ kind: "text", x: 0, y: 0, text: "drawn just after" });
+    board.undo();
+    expect(board.list().map((one) => one.text)).toEqual(["drawn just before"]);
+    board.undo();
+    expect(board.list().map((one) => one.text)).toEqual(["a", "drawn just before"]);
+  });
+
   it("carries bytes as base64 and back, and names things in order", () => {
     const bytes = new Uint8Array([0, 1, 2, 250, 255]);
     expect(fromBase64(toBase64(bytes))).toEqual(bytes);
@@ -159,6 +190,55 @@ describe("the camera", () => {
     expect(cam.zoom).toBe(2, "never blown up beyond twice its size");
     expect(toScreen(cam, { x: 75, y: 75 })).toEqual({ x: 200, y: 200 });
     expect(fit([], { w: 400, h: 400 }).zoom).toBe(1);
+  });
+});
+
+describe("the eraser's touch", () => {
+  // A stroke from (10, 10) to (110, 10), 6 wide.
+  const line = { kind: "ink", x: 10, y: 10, w: 100, h: 6, size: 6, points: [[0, 0, 0.5], [50, 0, 0.5], [100, 0, 0.5]] };
+  const at = (x, y) => ({ x, y });
+
+  it("touches a stroke on its line, and near it within half its nib and the slack", () => {
+    expect(touchesInk(line, at(60, 10), at(60, 10), 6)).toBe(true);
+    expect(touchesInk(line, at(60, 18), at(60, 18), 6), "8 from the line, within 3 + 6").toBe(true);
+    expect(touchesInk(line, at(60, 20), at(60, 20), 6), "10 from the line, beyond 3 + 6").toBe(false);
+    expect(touchesInk(line, at(117, 10), at(117, 10), 6), "past its end, within reach").toBe(true);
+    expect(touchesInk(line, at(60, 10)), "the slack has a default").toBe(true);
+  });
+
+  it("does not touch a stroke from far, even inside its box", () => {
+    const corner = { kind: "ink", x: 0, y: 0, w: 200, h: 200, size: 6, points: [[0, 0, 0.5], [200, 0, 0.5], [200, 200, 0.5]] };
+    expect(hits(corner, at(40, 160)), "inside its box").toBe(true);
+    expect(touchesInk(corner, at(40, 160), at(40, 160), 6)).toBe(false);
+    expect(touchesInk(line, at(500, 500), at(500, 500), 6)).toBe(false);
+  });
+
+  it("touches a stroke the finger crossed between two of its samples", () => {
+    expect(touchesInk(line, at(60, -40), at(60, 60), 6)).toBe(true);
+    expect(touchesInk(line, at(200, -40), at(200, 60), 6)).toBe(false);
+    expect(touchesInk(line, at(0, 30), at(120, 30), 6), "along it, but 20 away").toBe(false);
+  });
+
+  it("touches a dot, the stroke of a tap, only near it", () => {
+    const dot = { kind: "ink", x: 50, y: 50, w: 4, h: 4, size: 6, points: [[0, 0, 0.5]] };
+    expect(touchesInk(dot, at(52, 52), at(52, 52), 6)).toBe(true);
+    expect(touchesInk(dot, at(40, 52), at(60, 52), 6), "swept over it").toBe(true);
+    expect(touchesInk(dot, at(70, 70), at(70, 70), 6)).toBe(false);
+    expect(touchesInk({ ...dot, points: [] }, at(50, 50), at(50, 50), 6)).toBe(false);
+  });
+});
+
+describe("the delete button beside a selection", () => {
+  const view = { w: 360, h: 480 };
+
+  it("sits centred on the top-right corner of the item's box, on screen", () => {
+    // The box's corner is (90, 60) in the world: (200, 150) on screen; a button of 40, centred on it.
+    expect(cornerPlacement({ x: 50, y: 60, w: 40, h: 10 }, camera({ x: 20, y: 30, zoom: 2 }), view, 40)).toEqual({ x: 180, y: 130 });
+  });
+
+  it("stays inside the stage when the item is at its edge or beyond it", () => {
+    expect(cornerPlacement({ x: 300, y: -50, w: 200, h: 100 }, camera(), view, 40, 4)).toEqual({ x: 316, y: 4 });
+    expect(cornerPlacement({ x: -400, y: 900, w: 10, h: 10 }, camera(), view, 40, 4)).toEqual({ x: 4, y: 436 });
   });
 });
 
@@ -277,6 +357,11 @@ describe("the catalogue and the styles", () => {
     expect(t("es", "pen")).toBe("Rotulador");
     expect(t("pt-BR", "pen")).toBe("Caneta");
     expect(t("xx", "pen")).toBe("Pen");
+    expect(t("en", "select")).toBe("Select");
+    expect(t("es", "select")).toBe("Seleccionar");
+    expect(t("en", "eraser")).toBe("Eraser");
+    expect(t("es", "eraser")).toBe("Borrador");
+    for (const lang of LANGUAGES.filter((one) => one !== "en")) expect(t(lang, "eraser"), lang).not.toBe("Eraser");
   });
 
   it("points KaTeX's fonts at the ones the package carries, woff2 only, outside the shadow tree", () => {
@@ -705,6 +790,226 @@ describe("the view", () => {
     await deliver(core, encode({ k: ASK, board: "" }));
     expect(element.live).not.toBeNull();
     expect(decode(core.ft.live.send.mock.calls.at(-1)[0])).toMatchObject({ k: HELLO, board: element.board.id });
+  });
+
+  // Found by Ioan (2026-10-13): a stroke could only go with undo. The selection looked like a hand
+  // (moving the view), its delete appeared only up in the bar, and there was no eraser.
+  const drag = (points, id = 1) => {
+    touch("pointerdown", ...points[0], id);
+    for (const point of points.slice(1)) touch("pointermove", ...point, id);
+    touch("pointerup", ...points.at(-1), id);
+  };
+  /** The points a finger gives along a path through these corners: one every 5 px, as on a phone. */
+  const along = (...corners) => {
+    const points = [corners[0]];
+    for (let index = 1; index < corners.length; index += 1) {
+      const [[x0, y0], [x1, y1]] = [corners[index - 1], corners[index]];
+      const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 5));
+      for (let step = 1; step <= steps; step += 1) points.push([x0 + ((x1 - x0) * step) / steps, y0 + ((y1 - y0) * step) / steps]);
+    }
+    return points;
+  };
+  const labelOf = (button) => button.getAttribute("aria-label") ?? button.shadowRoot?.querySelector("button")?.getAttribute("aria-label");
+  const pick = () => inside().querySelector(".stage [data-pick]");
+  const placed = () => ({ x: parseFloat(pick().style.left), y: parseFloat(pick().style.top) });
+  const corner = (id) => {
+    const item = element.board.get(id);
+    const at = toScreen(element.cam, { x: item.x + item.w, y: item.y });
+    return { x: at.x - 20, y: at.y - 20 };
+  };
+
+  it("selects with a selection icon, not a hand that reads as moving the view", async () => {
+    await press("new");
+    const select = inside().querySelector('ion-button[data-act="tool"][data-id="select"]');
+    expect(select.innerHTML).toContain("scan-outline");
+    expect(inside().innerHTML).not.toContain("hand-left-outline");
+    expect(labelOf(select)).toBe("Select");
+  });
+
+  it("shows a delete button beside the selected stroke, which removes it, and undo brings it back", async () => {
+    await press("new");
+    drag([[40, 100], [100, 100], [160, 100]]);
+    const id = element.board.list()[0].id;
+    await press("tool", '[data-id="select"]');
+    expect(pick().hidden).toBe(true);
+    const bar = () => [...inside().querySelectorAll(":scope > ion-header [data-act]")].map((one) => `${one.dataset.act}:${one.dataset.id ?? ""}`);
+    const before = bar();
+    touch("pointerdown", 100, 100);
+    touch("pointerup", 100, 100);
+    expect(element.selected).toBe(id);
+    expect(bar(), "selecting leaves the bar as it was").toEqual(before);
+    expect(pick().hidden).toBe(false);
+    expect(placed()).toEqual(corner(id));
+    const remove = pick().querySelector('ion-button[data-act="remove"]');
+    expect(remove.getAttribute("color")).toBe("danger");
+    expect(remove.innerHTML).toContain("trash-outline");
+    expect(labelOf(remove)).toBe("Remove");
+    // The only delete: the bar has none, so it does not grow a row and push the stage down.
+    expect(inside().querySelectorAll('[data-act="remove"]')).toHaveLength(1);
+    expect(inside().querySelector(':scope > ion-header [data-act="remove"]')).toBeNull();
+    remove.click();
+    await tick();
+    expect(element.board.list()).toHaveLength(0);
+    expect(element.selected).toBeNull();
+    expect(pick().hidden).toBe(true);
+    await press("undo");
+    expect(element.board.list().map((one) => one.id)).toEqual([id]);
+    expect(pick().hidden).toBe(true);
+  });
+
+  it("keeps the delete button on the selected item as the board pans and zooms", async () => {
+    await press("new");
+    drag([[40, 100], [100, 100], [160, 100]]);
+    const id = element.board.list()[0].id;
+    await press("tool", '[data-id="select"]');
+    touch("pointerdown", 100, 100);
+    touch("pointerup", 100, 100);
+    const before = placed();
+    const wheel = new Event("wheel", { bubbles: true, cancelable: true });
+    Object.assign(wheel, { deltaX: -30, deltaY: -15, clientX: 0, clientY: 0 });
+    inside().querySelector(".stage").dispatchEvent(wheel);
+    expect(placed()).toEqual({ x: before.x + 30, y: before.y + 15 });
+    await press("zoomIn");
+    expect(placed()).toEqual(corner(id));
+    expect(element.selected).toBe(id);
+  });
+
+  it("hides the delete button while the selected item is dragged, and puts it back at its new place", async () => {
+    await press("new");
+    drag([[40, 100], [100, 100], [160, 100]]);
+    const id = element.board.list()[0].id;
+    await press("tool", '[data-id="select"]');
+    touch("pointerdown", 100, 100);
+    touch("pointerup", 100, 100);
+    const before = placed();
+    touch("pointerdown", 100, 100);
+    touch("pointermove", 130, 150);
+    expect(pick().hidden).toBe(true);
+    touch("pointerup", 130, 150);
+    expect(pick().hidden).toBe(false);
+    expect(placed()).toEqual(corner(id));
+    expect(placed()).toEqual({ x: before.x + 30, y: before.y + 50 });
+  });
+
+  it("removes a selected text with the button beside it, without opening it to edit", async () => {
+    await press("new");
+    const id = element.board.add({ kind: "text", x: 80, y: 80, text: "gone" });
+    element.sizes.set(id, { w: 100, h: 30 });
+    await press("tool", '[data-id="select"]');
+    touch("pointerdown", 110, 110);
+    touch("pointerup", 110, 110);
+    expect(element.selected).toBe(id);
+    // The finger on the button reaches the stage too: it must not start a gesture there.
+    const remove = pick().querySelector('ion-button[data-act="remove"]');
+    const at = placed();
+    for (const type of ["pointerdown", "pointerup"]) {
+      const event = new Event(type, { bubbles: true });
+      Object.assign(event, { pointerId: 2, clientX: at.x + 20, clientY: at.y + 20, pressure: 0.5 });
+      remove.dispatchEvent(event);
+    }
+    remove.click();
+    await tick();
+    await tick();
+    expect(element.board.list()).toHaveLength(0);
+    expect(element.editing).toBeNull();
+  });
+
+  it("has an eraser after the pen, which takes away the strokes the finger crosses, and only those", async () => {
+    await press("new");
+    const tools = [...inside().querySelectorAll('ion-button[data-act="tool"]')].map((one) => one.dataset.id);
+    expect(tools).toEqual(["select", "pen", "eraser", "text", "formula"]);
+    const eraser = inside().querySelector('ion-button[data-act="tool"][data-id="eraser"]');
+    expect(labelOf(eraser)).toBe("Eraser");
+    drag([[40, 100], [100, 100], [160, 100]]);
+    drag(along([40, 200], [160, 200], [160, 320]));
+    const [line, bend] = element.board.list();
+    await press("tool", '[data-id="eraser"]');
+    expect(inside().querySelector('ion-button[data-act="tool"][data-id="eraser"]').getAttribute("fill")).toBe("solid");
+    // Inside the bend's box, far from its line: nothing goes.
+    expect(hits(element.board.get(bend.id), toWorld(element.cam, { x: 60, y: 300 }))).toBe(true);
+    drag([[60, 300], [90, 300]]);
+    expect(element.board.list()).toHaveLength(2);
+    // Across the line, between two samples of the finger: the line goes, the bend stays.
+    drag([[100, 60], [100, 140]]);
+    expect(element.board.list().map((one) => one.id)).toEqual([bend.id]);
+    expect(line.id).not.toBe(bend.id);
+    // A tap on a stroke takes it too.
+    drag([[160, 260], [160, 260]]);
+    expect(element.board.list()).toHaveLength(0);
+  });
+
+  it("leaves texts, formulas and images to the selection: the eraser takes ink only", async () => {
+    await press("new");
+    element.board.add({ kind: "text", x: 70, y: 70, text: "kept" });
+    element.board.add({ kind: "formula", x: 70, y: 90, latex: "x" });
+    element.board.add({ kind: "image", x: 60, y: 60, w: 40, h: 40, src: "data:image/png;base64,iVBORw0KGgo=" });
+    drag([[40, 100], [100, 100], [160, 100]]);
+    await press("tool", '[data-id="eraser"]');
+    drag([[100, 60], [100, 100], [100, 140]]);
+    expect(element.board.list().map((one) => one.kind).sort()).toEqual(["formula", "image", "text"]);
+  });
+
+  it("gives back everything one eraser gesture took with one undo", async () => {
+    await press("new");
+    drag([[40, 100], [100, 100], [160, 100]]);
+    drag([[40, 160], [100, 160], [160, 160]]);
+    await press("tool", '[data-id="eraser"]');
+    touch("pointerdown", 100, 60);
+    touch("pointermove", 100, 120);
+    expect(element.board.list()).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    touch("pointermove", 100, 200);
+    touch("pointerup", 100, 200);
+    expect(element.board.list()).toHaveLength(0);
+    expect(inside().querySelector('ion-button[data-act="undo"]').disabled).toBe(false);
+    // What comes after the gesture is a step of its own.
+    await press("tool", '[data-id="pen"]');
+    drag([[40, 300], [160, 300]]);
+    await press("undo");
+    expect(element.board.list()).toHaveLength(0);
+    await press("undo");
+    expect(element.board.list()).toHaveLength(2);
+  });
+
+  it("ends the eraser's step when a second finger turns the gesture into a pinch", async () => {
+    await press("new");
+    drag([[40, 100], [100, 100], [160, 100]]);
+    drag([[40, 200], [100, 200], [160, 200]]);
+    const kept = element.board.list()[1].id;
+    await press("tool", '[data-id="eraser"]');
+    touch("pointerdown", 100, 60, 1);
+    touch("pointermove", 100, 140, 1);
+    touch("pointerdown", 300, 300, 2);
+    touch("pointerup", 100, 140, 1);
+    touch("pointerup", 300, 300, 2);
+    await press("tool", '[data-id="pen"]');
+    drag([[40, 300], [160, 300]]);
+    await press("undo");
+    expect(element.board.list().map((one) => one.id)).toEqual([kept]);
+  });
+
+  it("erases nothing in a replay, nor on a board that is read only", async () => {
+    await press("new");
+    drag([[40, 100], [100, 100], [160, 100]]);
+    await press("tool", '[data-id="eraser"]');
+    await press("replay");
+    drag([[100, 60], [100, 140]]);
+    await press("stopReplay");
+    expect(element.board.list()).toHaveLength(1);
+
+    const data = toBase64(new TextEncoder().encode(element.board.serialize()));
+    element.leaveBoard();
+    core = fakeCore();
+    globalThis.ft = core.ft;
+    element = document.createElement("ft-board");
+    document.body.append(element);
+    await core.open({ file: { name: "class.ftboard", mime: FILE_MIME, data } });
+    expect(element.readOnly).toBe(true);
+    element.tool = "eraser";
+    const item = element.board.list()[0];
+    const middle = toScreen(element.cam, { x: item.x + item.w / 2, y: item.y + item.h / 2 });
+    drag([[middle.x, middle.y - 40], [middle.x, middle.y + 40]]);
+    expect(element.board.list()).toHaveLength(1);
   });
 
   it("as the presenter, keeps one live session when a hello opens a board it did not have", async () => {

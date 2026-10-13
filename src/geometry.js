@@ -87,3 +87,54 @@ export function distance(a, b) {
 export function middle(a, b) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
+
+/** Where a button of `size` goes beside an item, on screen: centred on the top-right corner of
+ *  its box, and kept `margin` inside a view of this size, so an item at the edge never hides it. */
+export function cornerPlacement(box, cam, view, size, margin = 4) {
+  const corner = toScreen(cam, { x: box.x + box.w, y: box.y });
+  const inside = (value, length) => Math.max(margin, Math.min(value, length - size - margin));
+  return { x: inside(corner.x - size / 2, view.w), y: inside(corner.y - size / 2, view.h) };
+}
+
+/** The distance from a point to the segment a–b. */
+function toSegment(point, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = dx * dx + dy * dy;
+  const along = length ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length)) : 0;
+  return Math.hypot(point.x - (a.x + along * dx), point.y - (a.y + along * dy));
+}
+
+/** Which side of the line a–b a point is on: positive, negative, or 0 on it. */
+const side = (a, b, point) => (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+
+/** The distance between the segments a–b and c–d: 0 when they cross. */
+function betweenSegments(a, b, c, d) {
+  const cross = side(c, d, a) * side(c, d, b) < 0 && side(a, b, c) * side(a, b, d) < 0;
+  if (cross) return 0;
+  return Math.min(toSegment(a, c, d), toSegment(b, c, d), toSegment(c, a, b), toSegment(d, a, b));
+}
+
+/** Whether the finger, from one world point to the next, touches a stroke: the line it draws (its
+ *  points, relative to its corner), as wide as half its nib and `slack`, not the box around it.
+ *  The whole way between the two points counts, so a quick finger does not jump over a stroke. */
+export function touchesInk(item, from, to = from, slack = 6) {
+  const points = item.points ?? [];
+  if (!points.length) return false;
+  const reach = (item.size ?? 6) / 2 + slack;
+  // Far from the box, far from the line.
+  if (Number.isFinite(item.w) && Number.isFinite(item.h)) {
+    const box = { x: item.x - reach, y: item.y - reach, w: item.w + reach * 2, h: item.h + reach * 2 };
+    if (Math.max(from.x, to.x) < box.x || Math.min(from.x, to.x) > box.x + box.w) return false;
+    if (Math.max(from.y, to.y) < box.y || Math.min(from.y, to.y) > box.y + box.h) return false;
+  }
+  const at = ([x, y]) => ({ x: item.x + x, y: item.y + y });
+  let last = at(points[0]);
+  if (points.length === 1) return betweenSegments(from, to, last, last) <= reach;
+  for (let index = 1; index < points.length; index += 1) {
+    const next = at(points[index]);
+    if (betweenSegments(from, to, last, next) <= reach) return true;
+    last = next;
+  }
+  return false;
+}
