@@ -21,8 +21,8 @@ ni por el servidor.
 - **Imágenes**: del selector del sistema, colocadas en el centro de la vista.
 - **Seleccionar, mover y quitar**: la herramienta «seleccionar» lleva un icono de selección. Desde
   la 1.1.3, con un elemento seleccionado aparece un botón rojo de quitar junto a su esquina
-  superior derecha, que sigue al zoom y al desplazamiento y nunca se sale del lienzo (el de la
-  barra sigue ahí).
+  superior derecha, que sigue al zoom y al desplazamiento y nunca se sale del lienzo. Es el único:
+  la barra ya no lleva papelera, así que seleccionar no la alarga ni empuja el lienzo hacia abajo.
 - **Goma** (1.1.3), detrás del rotulador: quita los trazos que toca el dedo, medidos por su línea
   y no por la caja que los rodea. Solo tinta: un texto, una fórmula o una imagen se quitan
   seleccionándolos, para no borrar una imagen sin querer. Lo que se lleva un gesto vuelve con un

@@ -995,7 +995,6 @@ class BoardElement extends HTMLElement {
           ${button("image", T("image"), "image-outline")}
           ${button("undo", T("undo"), "arrow-undo-outline", { disabled: !this.board.canUndo })}
           ${button("redo", T("redo"), "arrow-redo-outline", { disabled: !this.board.canRedo })}
-          ${this.selected ? button("remove", T("remove"), "trash-outline", { danger: true }) : ""}
         </ion-buttons>
       </ion-toolbar>
       ${inks ? `<ion-toolbar><ion-buttons slot="start">${inks}</ion-buttons></ion-toolbar>` : ""}`);
