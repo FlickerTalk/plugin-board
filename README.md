@@ -69,6 +69,11 @@ Desde la 1.0.3 la ventana va en los envoltorios de Ionic que la app presta al ma
 lleva Ionic: `@ionic/core` es solo `devDependency`, para que los tests pinten lo mismo que el
 teléfono.
 
+Desde la 1.1.4 los botones rellenos de las barras (nueva pizarra, el directo encendido, la
+herramienta en uso y el grosor) llevan el color principal que la app presta al marco
+(`--ion-color-primary`). Antes salían negros con el tema claro y blancos con el oscuro: un
+`ion-button` relleno sin color dentro de un `ion-toolbar` toma el color del texto de la barra.
+
 ## Formato del fichero
 
 ```json

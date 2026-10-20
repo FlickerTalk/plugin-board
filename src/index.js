@@ -148,8 +148,10 @@ const icon = (name) =>
     ? `<ion-icon slot="icon-only" name="${name}" aria-hidden="true"></ion-icon>`
     : `<i slot="icon-only" class="i" style="--i:url(./icon/${name}.svg)" aria-hidden="true"></i>`;
 
-/** An Ionic button with an icon only: filled when it is the one in use. */
-const button = (act, label, name, { id, on = false, danger = false, disabled = false, fill = "clear", color = "" } = {}) =>
+/** An Ionic button with an icon only: filled with the app's primary colour when it is the one in
+ *  use. The colour is named because Ionic fills a button with no colour in a toolbar with the
+ *  toolbar's text colour (black in light, white in dark). */
+const button = (act, label, name, { id, on = false, danger = false, disabled = false, fill = "clear", color = on ? "primary" : "" } = {}) =>
   `<ion-button data-act="${act}" ${id === undefined ? "" : `data-id="${escape(id)}"`} fill="${on ? "solid" : fill}" ${danger ? 'color="danger"' : color ? `color="${color}"` : ""} aria-label="${escape(label)}" ${disabled ? "disabled" : ""}>${icon(name)}</ion-button>`;
 
 let stylesLoaded = false;
