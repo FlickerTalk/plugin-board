@@ -1263,6 +1263,27 @@ describe("with the Ionic the app lends", () => {
     expect(fill("pen")).not.toBe("solid");
   });
 
+  // Ionic paints a filled button in a toolbar with the toolbar's own text colour (black in light,
+  // white in dark) unless the button names a colour: the filled ones name the primary the app lends.
+  it("fills the buttons in its toolbars with the app's primary colour, not the toolbar's text colour", async () => {
+    // What Ionic has drawn: a filled button in a toolbar, and whether it carries a colour of its own.
+    const filled = async () => {
+      await tick();
+      return [...element.querySelectorAll("ion-button.button-solid.in-toolbar")].map((one) => ({
+        button: `${one.dataset.act}:${one.dataset.id ?? ""}`,
+        color: one.getAttribute("color"),
+        own: one.classList.contains("ion-color-primary"),
+      }));
+    };
+    const primary = (button) => ({ button, color: "primary", own: true });
+
+    expect(await filled()).toEqual([primary("new:")]);
+
+    await press("new");
+    await press("live");
+    expect(await filled()).toEqual([primary("live:"), primary("tool:pen"), primary("nib:")]);
+  });
+
   it("can undo nothing until something is drawn", async () => {
     await press("new");
     expect(element.querySelector('ion-button[data-act="undo"]').disabled).toBe(true);
